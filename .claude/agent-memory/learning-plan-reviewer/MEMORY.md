@@ -1,0 +1,2 @@
+- [Learning Plan Structure](project_learning_plan.md) — 20-week LLM post-training plan: 4 phases, resource tables, weekly content structure
+- [Review Findings](review_findings.md) — Common issues found during learning plan audit (structural, links, exercises)

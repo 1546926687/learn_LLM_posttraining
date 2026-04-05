@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LLM 算法工程师完整学习计划</title>
+    <style>
+        :root {
+            --bg: #ffffff;
+            --text: #1a1a2e;
+            --heading: #16213e;
+            --accent: #0f3460;
+            --link: #1a73e8;
+            --border: #e0e0e0;
+            --blockquote-bg: #f0f4ff;
+            --blockquote-border: #4a6cf7;
+            --code-bg: #f5f5f5;
+            --table-header: #f0f4ff;
+            --table-stripe: #fafbff;
+            --checkbox: #4a6cf7;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans SC", sans-serif;
+            line-height: 1.8;
+            color: var(--text);
+            background: var(--bg);
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 40px 24px 80px;
+        }
+        h1 {
+            font-size: 1.8em;
+            color: var(--heading);
+            margin: 48px 0 16px;
+            padding-bottom: 8px;
+            border-bottom: 2px solid var(--accent);
+        }
+        h1:first-child { margin-top: 0; }
+        h2 {
+            font-size: 1.4em;
+            color: var(--accent);
+            margin: 36px 0 12px;
+            padding-bottom: 6px;
+            border-bottom: 1px solid var(--border);
+        }
+        h3 {
+            font-size: 1.15em;
+            color: var(--heading);
+            margin: 24px 0 8px;
+        }
+        p { margin: 8px 0; }
+        a { color: var(--link); text-decoration: none; }
+        a:hover { text-decoration: underline; }
+        blockquote {
+            background: var(--blockquote-bg);
+            border-left: 4px solid var(--blockquote-border);
+            padding: 12px 20px;
+            margin: 16px 0;
+            border-radius: 0 6px 6px 0;
+        }
+        blockquote p { margin: 4px 0; }
+        ul, ol {
+            padding-left: 28px;
+            margin: 8px 0;
+        }
+        li { margin: 4px 0; }
+        li ul { margin: 4px 0 4px 0; }
+        code {
+            background: var(--code-bg);
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 0.9em;
+            font-family: "Fira Code", "Cascadia Code", Consolas, monospace;
+        }
+        pre {
+            background: #1e1e2e;
+            color: #cdd6f4;
+            padding: 16px 20px;
+            border-radius: 8px;
+            overflow-x: auto;
+            margin: 12px 0;
+        }
+        pre code {
+            background: none;
+            padding: 0;
+            color: inherit;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 16px 0;
+            font-size: 0.95em;
+        }
+        th {
+            background: var(--table-header);
+            color: var(--heading);
+            font-weight: 600;
+            text-align: left;
+            padding: 10px 12px;
+            border: 1px solid var(--border);
+        }
+        td {
+            padding: 8px 12px;
+            border: 1px solid var(--border);
+            vertical-align: top;
+        }
+        tr:nth-child(even) td { background: var(--table-stripe); }
+        hr {
+            border: none;
+            border-top: 1px solid var(--border);
+            margin: 32px 0;
+        }
+        input[type="checkbox"] {
+            accent-color: var(--checkbox);
+            margin-right: 6px;
+            transform: scale(1.1);
+        }
+        strong { color: var(--heading); }
+
+        /* Phase section headers */
+        h1:has(+ h1) { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+
+        /* Responsive table */
+        @media (max-width: 768px) {
+            body { padding: 20px 16px 60px; }
+            table { font-size: 0.85em; }
+            th, td { padding: 6px 8px; }
+            h1 { font-size: 1.5em; }
+        }
+
+        /* Print */
+        @media print {
+            body { max-width: 100%; padding: 0; }
+            a { color: var(--text); }
+            a::after { content: " (" attr(href) ")"; font-size: 0.8em; color: #666; }
+        }
+    </style>
+</head>
+<body>

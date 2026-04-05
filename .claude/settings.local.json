@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx:*)",
+      "Bash(\"LLM算法工程师完整学习计划_20周.html\")",
+      "Bash(rm header.html body_temp.html)",
+      "WebSearch",
+      "Bash(cd:*)",
+      "Bash(pip show:*)",
+      "Bash(python:*)"
+    ]
+  },
+  "prefersReducedMotion": false
+}

@@ -143,7 +143,8 @@
 <p>目标岗位：大模型算法工程师（后训练/推理/数据方向）
 总周期：约 20 周（5 个月）| 每日投入：工作日 2-3 小时，周末 4-6 小时
 起点：熟悉 Python + PyTorch，理解 Attention 数学公式，RL 知识刚起步
-终点：能独立完成 SFT/RLHF/GRPO 全流程训练，能部署推理服务，能设计评测体系</p>
+终点：能独立完成 SFT/RLHF/GRPO 全流程训练，能部署推理服务，能设计评测体系，能构建数据工程 pipeline</p>
+<p>⚠️ <strong>时间估计说明</strong>：每日标注的小时数是<strong>最低投入</strong>。论文精读、环境搭建、调参实验等任务经常会超时，预留 50% 缓冲是合理的。如果某天任务没完成，顺延到下一天，不要跳过。</p>
 </blockquote>
 <hr>
 <h1>═══════════════════════════════════════════</h1>
@@ -239,6 +240,20 @@
 <td><a href="https://arxiv.org/abs/1604.06174">https://arxiv.org/abs/1604.06174</a></td>
 <td>第 6 周</td>
 <td>计算换显存的关键技术</td>
+</tr>
+<tr>
+<td>12</td>
+<td>LIMA: Less Is More for Alignment, Zhou et al. 2023</td>
+<td><a href="https://arxiv.org/abs/2305.11206">https://arxiv.org/abs/2305.11206</a></td>
+<td>第 5 周</td>
+<td>&quot;数据质量 &gt; 数量&quot;的核心论据</td>
+</tr>
+<tr>
+<td>13</td>
+<td>Self-Instruct: Aligning LM with Self-Generated Instructions, Wang et al. 2023</td>
+<td><a href="https://arxiv.org/abs/2212.10560">https://arxiv.org/abs/2212.10560</a></td>
+<td>第 4 周</td>
+<td>合成数据生成的奠基方法</td>
 </tr>
 </tbody></table>
 <h2>🎬 阶段一推荐课程/讲座</h2>
@@ -421,8 +436,11 @@
 </ul>
 <p><strong>周三（2h）：KV Cache 与推理优化</strong></p>
 <ul>
-<li>理解为什么自回归生成时不需要重复计算之前 token 的 K/V</li>
-<li>手动计算：7B 模型 context=4096 时 KV Cache 占用多少显存</li>
+<li>先看图解博客理解自回归推理流程：<a href="https://jalammar.github.io/illustrated-gpt2/">The Illustrated GPT-2</a>，重点关注 &quot;Generating Text&quot; 部分，理解为什么每次只需处理最新 token</li>
+<li>在 Qwen2 源码中搜索 <code>past_key_value</code> / <code>cache</code>（<a href="https://github.com/huggingface/transformers/blob/v4.44.2/src/transformers/models/qwen2/modeling_qwen2.py">modeling_qwen2.py</a>），观察首次推理如何存 K/V、后续 token 如何拼接到已有 cache</li>
+<li>参考视频：<a href="https://www.youtube.com/watch?v=kCc8FmEb1nY">Andrej Karpathy - Let&#39;s build GPT</a>，generate 部分展示了 KV Cache 的本质</li>
+<li>手动计算：7B 模型 context=4096 时 KV Cache 占用多少显存。公式：<code>2 × num_layers × num_kv_heads × head_dim × seq_len × dtype_bytes</code>，以 Qwen2-7B（32层, 4 KV heads, head_dim=128, fp16）为例算出单条序列约 256MB</li>
+<li>延伸阅读：<a href="https://arxiv.org/abs/2009.06732">Efficient Transformers: A Survey</a> Section 3.1，了解 KV Cache 在更大规模下的优化方向</li>
 </ul>
 <p><strong>周四（2h）：SwiGLU + RMSNorm</strong></p>
 <ul>
@@ -470,83 +488,332 @@
 <li>理解 Alpaca / ShareGPT 格式</li>
 <li>动手构造 50 条自己领域的 SFT 数据</li>
 </ul>
-<p><strong>周四（2h）：LLaMA-Factory 环境搭建</strong></p>
+<p><strong>周四（3h）：用原生 HuggingFace Trainer 手写 SFT 训练脚本（关键！）</strong></p>
+<ul>
+<li>⚠️ <strong>不用 LLaMA-Factory</strong>，从零用 <code>transformers.Trainer</code> + <code>peft</code> 写一个完整的 LoRA SFT 脚本（~100 行）</li>
+<li>需要自己写的核心逻辑：<ol>
+<li>加载模型和 tokenizer：<code>AutoModelForCausalLM.from_pretrained()</code> + <code>AutoTokenizer.from_pretrained()</code></li>
+<li>配置 LoRA：<code>peft.LoraConfig(r=16, lora_alpha=32, target_modules=&quot;all-linear&quot;)</code> + <code>get_peft_model()</code></li>
+<li>数据预处理函数：tokenize → 构造 labels（instruction 部分设为 -100）→ padding</li>
+<li>配置 <code>TrainingArguments</code>（lr、batch_size、warmup、save_strategy）</li>
+<li>实例化 <code>Trainer</code> 并 <code>trainer.train()</code></li>
+</ol>
+</li>
+<li>参考 HuggingFace PEFT 文档：<a href="https://huggingface.co/docs/peft/quicktour">https://huggingface.co/docs/peft/quicktour</a></li>
+<li>参考 TRL SFTTrainer 源码理解封装逻辑：<a href="https://github.com/huggingface/trl/blob/main/trl/trainer/sft_trainer.py">https://github.com/huggingface/trl/blob/main/trl/trainer/sft_trainer.py</a></li>
+<li>在 Qwen2.5-1.5B + Alpaca 数据集上跑通</li>
+<li><strong>为什么要做这一步</strong>：面试时被问到 &quot;LLaMA-Factory 底下做了什么&quot;，你需要答得出来</li>
+<li>产出：一个独立可运行的 <code>sft_train.py</code> 脚本</li>
+</ul>
+<p><strong>周五（2h）：LLaMA-Factory 环境搭建 + 对比体验</strong></p>
 <ul>
 <li>仓库：<a href="https://github.com/hiyouga/LLaMA-Factory">https://github.com/hiyouga/LLaMA-Factory</a></li>
 <li>用 Qwen2.5-1.5B 在 Web UI 跑通一次最简 LoRA SFT</li>
-</ul>
-<p><strong>周五（2h）：逐个理解训练配置参数</strong></p>
-<ul>
-<li>cutoff_len、lora_rank/alpha、lora_target、learning_rate、epochs、batch_size</li>
+<li>对比你手写的脚本和 LLaMA-Factory 的区别：LLaMA-Factory 帮你封装了什么？</li>
+<li>逐个理解训练配置参数：cutoff_len、lora_rank/alpha、lora_target、learning_rate、epochs、batch_size</li>
 </ul>
 <p><strong>周末（4-6h）：命令行 SFT + 三组对比实验</strong></p>
 <ul>
-<li>lora_rank=8 vs 32 / lora_target 部分 vs all / lr=1e-5 vs 5e-5</li>
-<li>用 wandb 记录，写实验报告</li>
+<li>用 LLaMA-Factory 命令行模式做 3 组对比实验：<ul>
+<li>lora_rank=8 vs 32 / lora_target 部分 vs all / lr=1e-4 vs 5e-5</li>
+</ul>
+</li>
+<li>用 wandb 记录，整理实验对比表格</li>
+<li>产出：3 组实验的 wandb 曲线 + 对比结论</li>
 </ul>
 <h3>✅ 验收</h3>
 <ul>
-<li><input disabled="" type="checkbox"> 能解释 LoRA 的数学原理</li>
+<li><input disabled="" type="checkbox"> 能解释 LoRA 的数学原理（冻结 W，训练低秩 A·B）</li>
+<li><input disabled="" type="checkbox"> <strong>能用原生 HuggingFace Trainer + PEFT 手写一个可运行的 SFT 脚本</strong></li>
 <li><input disabled="" type="checkbox"> 能独立构造 SFT 数据集</li>
 <li><input disabled="" type="checkbox"> 完成 3 组对比实验，有可复现的记录</li>
 </ul>
 <hr>
 <h2>第 4 周：7B 模型微调实战</h2>
 <h3>本周目标</h3>
-<p>在 7B 模型上完成完整 SFT 流程，解决实际工程问题。</p>
+<p>在 7B 模型上完成完整 SFT 流程，解决实际工程问题（OOM、loss 异常等），产出可作为面试展示的实验报告。</p>
 <h3>每日任务</h3>
-<p><strong>周一（2h）</strong>：下载 Qwen2.5-7B-Instruct + 准备有实际意义的 SFT 数据集
-<strong>周二（2h）</strong>：QLoRA 配置 + 首次 7B 训练
-<strong>周三（2h）</strong>：监控训练 + 排查 OOM / loss 异常等问题
-<strong>周四（2h）</strong>：合并 LoRA adapter + 推理测试 + 对比微调前后效果
-<strong>周五（2h）</strong>：设计 20-30 个测试问题做手动评测
-<strong>周末（4-6h）</strong>：LoRA vs QLoRA 对比 + 写完整实验报告（面试作品）</p>
+<p><strong>周一（3h）：数据工程基础——清洗、过滤、质量打分</strong></p>
+<ul>
+<li>从 HuggingFace 下载 Qwen2.5-7B-Instruct：<a href="https://huggingface.co/Qwen/Qwen2.5-7B-Instruct">https://huggingface.co/Qwen/Qwen2.5-7B-Instruct</a></li>
+<li>下载 Alpaca-GPT4 数据集：<a href="https://huggingface.co/datasets/vicgalle/alpaca-gpt4">https://huggingface.co/datasets/vicgalle/alpaca-gpt4</a></li>
+<li><strong>数据清洗 pipeline</strong>（这是工业界的核心技能，比调参更重要）：<ol>
+<li><strong>去重</strong>：用 MinHash 或精确去重去掉重复/近似重复的条目</li>
+<li><strong>长度过滤</strong>：去掉 output 过短（&lt; 20 字）或过长（&gt; 2048 字）的条目</li>
+<li><strong>质量打分</strong>：用规则（是否有完整句子、是否包含乱码）+ 简单模型（perplexity 过滤）给数据打分</li>
+<li><strong>类型标注</strong>：对每条数据标注任务类型（翻译/摘要/QA/代码/创作/推理）</li>
+</ol>
+</li>
+<li>阅读 Self-Instruct 论文 Section 2-3：<a href="https://arxiv.org/abs/2212.10560">https://arxiv.org/abs/2212.10560</a><ul>
+<li>了解如何用 LLM 生成高质量训练数据</li>
+</ul>
+</li>
+<li>产出：一份经过清洗的 SFT 数据集 JSON 文件 + 数据质量报告（条数、长度分布、类型分布、清洗前后对比）</li>
+</ul>
+<p><strong>周二（2h）：QLoRA 配置与首次 7B 训练</strong></p>
+<ul>
+<li>在 LLaMA-Factory（<a href="https://github.com/hiyouga/LLaMA-Factory%EF%BC%89%E4%B8%AD%E9%85%8D%E7%BD%AE">https://github.com/hiyouga/LLaMA-Factory）中配置</a> QLoRA 训练：<ul>
+<li><code>quantization_bit: 4</code>（NF4 量化，参考 QLoRA 论文：<a href="https://arxiv.org/abs/2305.14314%EF%BC%89">https://arxiv.org/abs/2305.14314）</a></li>
+<li><code>lora_rank: 16</code>, <code>lora_alpha: 32</code>, <code>lora_target: all</code></li>
+<li><code>learning_rate: 2e-4</code>, <code>num_train_epochs: 3</code>, <code>cutoff_len: 2048</code></li>
+<li><code>per_device_train_batch_size: 2</code>, <code>gradient_accumulation_steps: 4</code></li>
+</ul>
+</li>
+<li>开启 wandb 监控：<code>export WANDB_PROJECT=qwen7b-sft</code></li>
+<li>启动训练，记录初始显存占用（预期 24GB 卡可跑 QLoRA 7B）</li>
+<li>产出：训练启动成功的截图 + wandb 项目链接</li>
+</ul>
+<p><strong>周三（2h）：监控训练与问题排查</strong></p>
+<ul>
+<li>观察 wandb 训练曲线，重点关注：<ul>
+<li>loss 是否在前 100 步内开始下降？如果不降 → 检查 lr 是否太小或数据格式是否正确</li>
+<li>loss 下降后是否反弹？→ 可能 lr 太大或数据有噪声</li>
+<li>grad_norm 是否稳定？→ 如果突然飙升可能是数据异常</li>
+</ul>
+</li>
+<li>常见 OOM 排查清单：<ul>
+<li>方法 1：降低 <code>cutoff_len</code>（2048 → 1024）</li>
+<li>方法 2：降低 <code>per_device_train_batch_size</code>（2 → 1）并增大 <code>gradient_accumulation_steps</code></li>
+<li>方法 3：开启 <code>gradient_checkpointing: true</code>（参考论文：<a href="https://arxiv.org/abs/1604.06174%EF%BC%89">https://arxiv.org/abs/1604.06174）</a></li>
+<li>方法 4：使用 <code>flash_attn: fa2</code>（需要安装 flash-attn 包）</li>
+</ul>
+</li>
+<li>记录你遇到的每个问题和解决方案</li>
+<li>产出：一份问题排查日志（问题描述、原因分析、解决方案、效果）</li>
+</ul>
+<p><strong>周四（2h）：LoRA 合并与推理测试</strong></p>
+<ul>
+<li>训练完成后，使用 LLaMA-Factory 的 <code>export_model.py</code> 合并 LoRA adapter 到基础模型<ul>
+<li>参考文档：<a href="https://github.com/hiyouga/LLaMA-Factory#merge-lora-weights-and-export-model">https://github.com/hiyouga/LLaMA-Factory#merge-lora-weights-and-export-model</a></li>
+</ul>
+</li>
+<li>用合并后的模型做推理测试，准备 10 个测试 prompt：<ul>
+<li>3 个简单指令（翻译、摘要、改写）</li>
+<li>3 个知识问答（常识、领域知识）</li>
+<li>2 个多步推理（数学、逻辑）</li>
+<li>2 个创作类（写故事、写邮件）</li>
+</ul>
+</li>
+<li>对比微调前（原始 Qwen2.5-7B-Instruct）和微调后的回答质量</li>
+<li>产出：10 个 case 的对比表格（prompt / 原始回答 / 微调后回答 / 评价）</li>
+</ul>
+<p><strong>周五（2h）：系统化手动评测</strong></p>
+<ul>
+<li>设计 30 个测试问题，覆盖以下维度：<ul>
+<li>指令跟随（10 个）：格式约束、长度约束、角色扮演</li>
+<li>知识准确性（10 个）：领域事实、常识推理</li>
+<li>安全性（5 个）：拒答有害请求、不编造事实</li>
+<li>中文能力（5 个）：成语运用、文言文理解、中文写作</li>
+</ul>
+</li>
+<li>设计评分标准：每个问题 1-5 分（1=完全错误，3=基本正确，5=优秀）</li>
+<li>分别对原始模型和微调模型打分，计算各维度平均分</li>
+<li>产出：评测表格 + 各维度雷达图</li>
+</ul>
+<p><strong>周末（4-6h）：LoRA vs QLoRA 对比实验 + 实验报告</strong></p>
+<ul>
+<li>在相同数据和超参下，对比 LoRA（FP16）和 QLoRA（NF4）：<ul>
+<li>训练显存占用（用 <code>nvidia-smi</code> 记录峰值显存）</li>
+<li>训练速度（tokens/sec 或 samples/sec，从 wandb 读取）</li>
+<li>最终 loss 和评测分数</li>
+<li>推理质量（用周五的 30 个问题评测）</li>
+</ul>
+</li>
+<li>写一份完整实验报告，结构：<ol>
+<li>实验目的和背景</li>
+<li>实验设置（模型、数据、超参数表格）</li>
+<li>训练过程（loss 曲线截图、显存对比）</li>
+<li>评测结果（分维度对比表格）</li>
+<li>结论和建议（什么场景用 LoRA、什么场景用 QLoRA）</li>
+</ol>
+</li>
+<li>产出：一份可作为面试展示的实验报告（Markdown + 图表）</li>
+</ul>
 <h3>✅ 验收</h3>
 <ul>
-<li><input disabled="" type="checkbox"> 在 7B 模型上成功完成 LoRA SFT</li>
-<li><input disabled="" type="checkbox"> 解决了至少 2 个实际工程问题</li>
-<li><input disabled="" type="checkbox"> 有包含训练曲线和评测结果的实验报告</li>
+<li><input disabled="" type="checkbox"> 在 7B 模型上成功完成 QLoRA SFT，训练 loss 收敛</li>
+<li><input disabled="" type="checkbox"> 解决了至少 2 个实际工程问题（OOM、loss 异常等），有排查日志</li>
+<li><input disabled="" type="checkbox"> 完成 30 个问题的手动评测，有分维度评分</li>
+<li><input disabled="" type="checkbox"> 完成 LoRA vs QLoRA 对比实验，有包含训练曲线和评测结果的实验报告</li>
 </ul>
 <hr>
 <h2>第 5 周：深入理解训练细节</h2>
+<h3>本周目标</h3>
+<p>深入理解 SFT 训练中的工程细节，能调优 loss mask、学习率、batch size 等关键参数，理解 Tokenizer 对训练效率的影响。</p>
 <h3>每日任务</h3>
-<p><strong>周一（2h）</strong>：SFT loss mask 原理（只对 response 算 loss，label 中 -100 位置不计入梯度）
-<strong>周二（2h）</strong>：学习率调度（cosine + warmup）对比实验，用 wandb 记录不同调度策略的 loss 曲线
-<strong>周三（2h）</strong>：梯度累积与有效 batch size 的关系，实验对比 micro_batch=1×grad_accum=8 vs micro_batch=4×grad_accum=2
-<strong>周四（2h）</strong>：数据质量实验（100 条精选 vs 1000 条普通），参考 LIMA 论文思想（<a href="https://arxiv.org/abs/2305.11206%EF%BC%89">https://arxiv.org/abs/2305.11206）</a>
-<strong>周五+周末（6-8h）</strong>：Tokenizer 深入</p>
+<p><strong>周一（2h）：SFT loss mask 原理</strong></p>
 <ul>
-<li>观看 Karpathy Tokenizer 视频：<a href="https://www.youtube.com/watch?v=zduSFxRajkE">https://www.youtube.com/watch?v=zduSFxRajkE</a></li>
-<li>配合代码仓库 minbpe：<a href="https://github.com/karpathy/minbpe">https://github.com/karpathy/minbpe</a></li>
-<li>理解 BPE 原理 + 中英文分词差异 + tokenizer 对训练效率的影响</li>
+<li>阅读 HuggingFace Transformers 中 <code>DataCollatorForSeq2Seq</code> 的源码：<a href="https://github.com/huggingface/transformers/blob/main/src/transformers/data/data_collator.py">https://github.com/huggingface/transformers/blob/main/src/transformers/data/data_collator.py</a></li>
+<li>核心机制：只对 response 部分算 loss，instruction/input 部分的 label 设为 -100</li>
+<li>PyTorch 的 <code>CrossEntropyLoss(ignore_index=-100)</code> 会自动跳过 -100 位置</li>
+<li>动手实验：在 LLaMA-Factory（<a href="https://github.com/hiyouga/LLaMA-Factory%EF%BC%89%E4%B8%AD%E5%88%86%E5%88%AB%E7%94%A8">https://github.com/hiyouga/LLaMA-Factory）中分别用</a> <code>train_on_prompt: true</code> 和 <code>train_on_prompt: false</code> 训练，对比 loss 曲线和最终效果<ul>
+<li>预期：<code>train_on_prompt: false</code>（只对 response 算 loss）效果更好</li>
+</ul>
+</li>
+<li>阅读参考博客：Hugging Face &quot;How to fine-tune LLMs&quot; <a href="https://huggingface.co/blog/sft-trainer">https://huggingface.co/blog/sft-trainer</a></li>
+<li>产出：一段代码注释，解释 loss mask 在 forward 过程中如何生效</li>
+</ul>
+<p><strong>周二（2h）：学习率调度对比实验</strong></p>
+<ul>
+<li>在 Qwen2.5-1.5B + 上周的 SFT 数据上做 3 组对比实验：<ul>
+<li>实验 1：<code>lr_scheduler_type: cosine</code>, <code>warmup_ratio: 0.1</code>, <code>learning_rate: 2e-4</code></li>
+<li>实验 2：<code>lr_scheduler_type: linear</code>, <code>warmup_ratio: 0.1</code>, <code>learning_rate: 2e-4</code></li>
+<li>实验 3：<code>lr_scheduler_type: cosine</code>, <code>warmup_ratio: 0.03</code>, <code>learning_rate: 5e-4</code></li>
+</ul>
+</li>
+<li>用 wandb 记录三组实验的 loss 曲线、lr 曲线</li>
+<li>阅读参考资料：HuggingFace Trainer 文档中 lr_scheduler 部分 <a href="https://huggingface.co/docs/transformers/main_classes/trainer">https://huggingface.co/docs/transformers/main_classes/trainer</a></li>
+<li>产出：三组实验的 wandb 曲线对比截图 + 结论（哪种调度策略更稳定）</li>
+</ul>
+<p><strong>周三（2h）：梯度累积与有效 batch size</strong></p>
+<ul>
+<li>核心公式：有效 batch size = micro_batch_size × gradient_accumulation_steps × num_gpus</li>
+<li>做 2 组对比实验（保持有效 batch size = 8）：<ul>
+<li>实验 A：<code>per_device_train_batch_size: 1</code>, <code>gradient_accumulation_steps: 8</code></li>
+<li>实验 B：<code>per_device_train_batch_size: 4</code>, <code>gradient_accumulation_steps: 2</code></li>
+</ul>
+</li>
+<li>记录：训练速度（samples/sec）、显存占用、最终 loss</li>
+<li>理解 trade-off：micro_batch 大 → 训练快但显存多；grad_accum 大 → 省显存但训练慢</li>
+<li>阅读参考：Hugging Face &quot;Efficient Training on a Single GPU&quot; <a href="https://huggingface.co/docs/transformers/perf_train_gpu_one">https://huggingface.co/docs/transformers/perf_train_gpu_one</a></li>
+<li>产出：对比表格（速度 / 显存 / loss）+ 结论</li>
+</ul>
+<p><strong>周四（3h）：数据质量实验 + 引入评测 baseline（关键！）</strong></p>
+<ul>
+<li>精读 LIMA 论文 Abstract 和 Section 3-4：<a href="https://arxiv.org/abs/2305.11206">https://arxiv.org/abs/2305.11206</a><ul>
+<li>核心观点：1000 条高质量数据 &gt; 50000 条低质量数据</li>
+<li>理解 &quot;Superficial Alignment Hypothesis&quot;：对齐主要是学习风格和格式，不是知识</li>
+</ul>
+</li>
+<li>做对比实验：<ul>
+<li>数据集 A：从 Alpaca-GPT4（<a href="https://huggingface.co/datasets/vicgalle/alpaca-gpt4%EF%BC%89%E7%B2%BE%E9%80%89">https://huggingface.co/datasets/vicgalle/alpaca-gpt4）精选</a> 100 条（人工过滤掉低质量/重复/过短的）</li>
+<li>数据集 B：随机采样 1000 条（不做质量过滤）</li>
+</ul>
+</li>
+<li><strong>⚠️ 从本周起引入 lm-evaluation-harness 作为标准评测工具</strong>（不要等到第 15 周）：<ul>
+<li>安装：<code>pip install lm-eval</code>，文档：<a href="https://github.com/EleutherAI/lm-evaluation-harness">https://github.com/EleutherAI/lm-evaluation-harness</a></li>
+<li>先对原始 Qwen2.5-1.5B 跑 GSM8K（5-shot）和 MMLU（5-shot）作为 <strong>baseline</strong></li>
+<li>然后对数据集 A 和 B 训练的模型分别跑相同评测</li>
+<li><strong>从此以后每次训练实验都用相同 benchmark 对比</strong>，而不是主观评分</li>
+</ul>
+</li>
+<li>产出：baseline 评测分数 + 数据质量实验的 benchmark 对比表格</li>
+</ul>
+<p><strong>周五+周末（6-8h）：Tokenizer 深入</strong></p>
+<ul>
+<li>观看 Karpathy Tokenizer 视频（~2h13m）：<a href="https://www.youtube.com/watch?v=zduSFxRajkE">https://www.youtube.com/watch?v=zduSFxRajkE</a><ul>
+<li>前 1 小时：BPE（Byte Pair Encoding）算法原理——从字符级开始，反复合并最频繁的 pair</li>
+<li>后 1 小时：GPT-4 的 tokenizer 实现细节、特殊 token 处理</li>
+</ul>
+</li>
+<li>配合代码仓库 minbpe 动手实现：<a href="https://github.com/karpathy/minbpe">https://github.com/karpathy/minbpe</a><ul>
+<li>跑通 <code>train.py</code>，在一段英文文本上训练一个 BPE tokenizer</li>
+<li>阅读 <code>basic.py</code> 和 <code>regex.py</code> 的源码，理解 merge 过程</li>
+</ul>
+</li>
+<li>中英文分词效率对比实验：<pre><code class="language-python">from transformers import AutoTokenizer
+tok = AutoTokenizer.from_pretrained(&quot;Qwen/Qwen2.5-7B-Instruct&quot;)
+en_text = &quot;The quick brown fox jumps over the lazy dog&quot;
+zh_text = &quot;敏捷的棕色狐狸跳过了懒惰的狗&quot;
+print(f&quot;English: {len(tok.encode(en_text))} tokens&quot;)
+print(f&quot;Chinese: {len(tok.encode(zh_text))} tokens&quot;)
+</code></pre>
+</li>
+<li>思考：为什么中文 tokenizer 效率对训练成本和 cutoff_len 有直接影响？</li>
+<li>产出：一篇笔记——BPE 原理 + 中英文 token 效率对比数据 + tokenizer 选择对训练的影响</li>
 </ul>
 <h3>✅ 验收</h3>
 <ul>
-<li><input disabled="" type="checkbox"> 能解释 loss mask 的 -100 机制</li>
-<li><input disabled="" type="checkbox"> 做过 lr / batch size / 数据量的对比实验</li>
-<li><input disabled="" type="checkbox"> 理解 tokenizer 对训练效率的影响</li>
+<li><input disabled="" type="checkbox"> 能解释 loss mask 的 -100 机制，能说出 <code>train_on_prompt</code> 开关的效果差异</li>
+<li><input disabled="" type="checkbox"> 做过 lr 调度 / batch size / 数据量的对比实验，每组都有 wandb 曲线</li>
+<li><input disabled="" type="checkbox"> <strong>已搭建 lm-evaluation-harness，有原始模型的 baseline 评测分数</strong></li>
+<li><input disabled="" type="checkbox"> 能解释中英文 tokenizer 效率差异并计算同一段文本的 token 数差异</li>
+<li><input disabled="" type="checkbox"> 验证了 LIMA &quot;质量 &gt; 数量&quot; 的核心观点，用 benchmark 分数（而非主观评价）支撑结论</li>
 </ul>
 <hr>
 <h2>第 6 周：全参微调初探 + 阶段总结</h2>
+<h3>本周目标</h3>
+<p>理解全参微调的工程挑战，掌握 FlashAttention 和 Gradient Checkpointing 等显存优化技术，完成阶段一总结。</p>
 <h3>每日任务</h3>
-<p><strong>周一-周二（4h）</strong>：Qwen2.5-1.5B 全参微调 vs LoRA 对比，记录显存、速度、最终效果差异
-<strong>周三（2h）</strong>：Flash Attention 原理</p>
+<p><strong>周一（2h）：全参微调实操</strong></p>
 <ul>
-<li>精读 FlashAttention 论文：<a href="https://arxiv.org/abs/2205.14135">https://arxiv.org/abs/2205.14135</a></li>
-<li>进阶：FlashAttention-2：<a href="https://arxiv.org/abs/2307.08691">https://arxiv.org/abs/2307.08691</a></li>
-<li>核心思想：tiling 避免写完整 N×N 矩阵到 HBM，IO-aware 算法</li>
-<li>代码仓库：<a href="https://github.com/Dao-AILab/flash-attention">https://github.com/Dao-AILab/flash-attention</a>
-<strong>周四（2h）</strong>：Gradient Checkpointing（用计算换显存）</li>
-<li>论文：<a href="https://arxiv.org/abs/1604.06174">https://arxiv.org/abs/1604.06174</a></li>
-<li>理解原理：前向传播时不保存中间激活值，反向时重新计算</li>
-<li>在 LLaMA-Factory 中开启 gradient_checkpointing，对比显存变化
-<strong>周五+周末（6-8h）</strong>：阶段一总结文档 + 发布到 GitHub/博客</li>
+<li>在 LLaMA-Factory（<a href="https://github.com/hiyouga/LLaMA-Factory%EF%BC%89%E4%B8%AD%E9%85%8D%E7%BD%AE%E5%85%A8%E5%8F%82%E5%BE%AE%E8%B0%83%EF%BC%9A">https://github.com/hiyouga/LLaMA-Factory）中配置全参微调：</a><ul>
+<li>使用 Qwen2.5-1.5B（全参 1.5B 模型在 24GB 卡上可行）</li>
+<li>关闭 LoRA：<code>finetuning_type: full</code></li>
+<li><code>learning_rate: 2e-5</code>（全参微调 lr 通常比 LoRA 低一个数量级）</li>
+<li><code>per_device_train_batch_size: 1</code>, <code>gradient_accumulation_steps: 8</code></li>
+<li>开启 <code>gradient_checkpointing: true</code> 和 <code>flash_attn: fa2</code></li>
+</ul>
+</li>
+<li>使用与第 4 周相同的数据集，开启 wandb 记录</li>
+<li>记录峰值显存占用（<code>nvidia-smi</code> 或 wandb system metrics）</li>
+<li>产出：全参微调训练启动成功，loss 开始下降</li>
+</ul>
+<p><strong>周二（2h）：全参微调 vs LoRA 对比分析</strong></p>
+<ul>
+<li>等全参微调完成（或训练到同等步数），与第 3-4 周的 LoRA 实验对比：<ul>
+<li>训练显存：全参（预期 ~20GB for 1.5B）vs LoRA（预期 ~10GB for 1.5B）</li>
+<li>训练速度：全参通常更慢（更新所有参数）</li>
+<li>最终 loss 和评测质量（用第 4 周的 30 个评测问题）</li>
+<li>可训练参数量：全参（100%）vs LoRA（通常 &lt; 1%）</li>
+</ul>
+</li>
+<li>阅读参考博客：HuggingFace &quot;Full Fine-tuning vs LoRA&quot; <a href="https://huggingface.co/blog/peft">https://huggingface.co/blog/peft</a></li>
+<li>产出：全参 vs LoRA 对比表格（显存 / 速度 / 参数量 / 效果 / 适用场景）</li>
+</ul>
+<p><strong>周三（2h）：FlashAttention 原理</strong></p>
+<ul>
+<li>精读 FlashAttention 论文 Section 1-3：<a href="https://arxiv.org/abs/2205.14135">https://arxiv.org/abs/2205.14135</a><ul>
+<li>Section 2：GPU 内存层次——SRAM（快但小）vs HBM（慢但大）</li>
+<li>Section 3：Tiling 策略——将 Q/K/V 分块加载到 SRAM 中计算，避免在 HBM 中存储 N×N 的 attention 矩阵</li>
+<li>关键图：Figure 1——标准 attention 的 HBM 读写量 vs FlashAttention 的 HBM 读写量</li>
+</ul>
+</li>
+<li>进阶阅读 FlashAttention-2 论文 Section 2：<a href="https://arxiv.org/abs/2307.08691">https://arxiv.org/abs/2307.08691</a><ul>
+<li>改进：更好的并行化（序列长度维度并行）和 work partitioning</li>
+</ul>
+</li>
+<li>代码仓库（可选浏览）：<a href="https://github.com/Dao-AILab/flash-attention">https://github.com/Dao-AILab/flash-attention</a></li>
+<li>动手验证：在 LLaMA-Factory 中分别用 <code>flash_attn: disabled</code> 和 <code>flash_attn: fa2</code> 训练相同模型<ul>
+<li>记录速度差异（预期 FlashAttention 快 1.5-2x）和显存差异</li>
+</ul>
+</li>
+<li>产出：FlashAttention 原理笔记（含 tiling 示意图）+ 开启/关闭的速度对比数据</li>
+</ul>
+<p><strong>周四（2h）：Gradient Checkpointing（用计算换显存）</strong></p>
+<ul>
+<li>精读论文 Section 1-3：<a href="https://arxiv.org/abs/1604.06174">https://arxiv.org/abs/1604.06174</a><ul>
+<li>核心思想：前向传播时只保存部分层的激活值（checkpoint），反向传播时重新计算其余层</li>
+<li>Trade-off：显存减少约 √N 倍，计算量增加约 33%</li>
+</ul>
+</li>
+<li>在 PyTorch 中的实现：<code>torch.utils.checkpoint.checkpoint()</code> 函数</li>
+<li>动手验证：在 LLaMA-Factory 中分别用 <code>gradient_checkpointing: true</code> 和 <code>false</code> 训练 Qwen2.5-1.5B<ul>
+<li>记录显存差异（预期减少 30-50%）和速度差异（预期慢 20-30%）</li>
+</ul>
+</li>
+<li>思考：什么时候应该开启？→ 当显存是瓶颈时（比如训练更大模型或更长序列）</li>
+<li>产出：gradient checkpointing 开启/关闭的显存和速度对比数据</li>
+</ul>
+<p><strong>周五+周末（6-8h）：阶段一总结 + 整理实验 repo</strong></p>
+<ul>
+<li>整理阶段一全部实验代码和配置到 GitHub repo，确保可复现</li>
+<li>写一份精简的阶段总结（bullet points 即可，不需要长文博客）：<ol>
+<li>全参 vs LoRA vs QLoRA 的对比表格（含 benchmark 数据）</li>
+<li>训练工程经验：loss mask、lr 调度、batch size、数据质量的实验结论</li>
+<li>显存优化：FlashAttention + Gradient Checkpointing 的效果数据</li>
+<li><strong>手写 SFT 脚本 vs LLaMA-Factory 的对比体会</strong></li>
+</ol>
+</li>
+<li>⚠️ 不要花时间写精美博客，把时间留给后续阶段的实操</li>
+<li>产出：GitHub repo（含实验代码、配置、结果）+ 阶段总结 README</li>
 </ul>
 <h3>✅ 验收</h3>
 <ul>
-<li><input disabled="" type="checkbox"> 完成全参 vs LoRA 对比实验</li>
-<li><input disabled="" type="checkbox"> 理解 Flash Attention 和 Gradient Checkpointing</li>
-<li><input disabled="" type="checkbox"> 产出阶段总结文档 + 所有实验记录</li>
+<li><input disabled="" type="checkbox"> 完成全参 vs LoRA 对比实验，有数据支撑的对比表格</li>
+<li><input disabled="" type="checkbox"> 能解释 FlashAttention 的 tiling 策略如何减少 HBM 访问次数，有开启/关闭的速度对比数据</li>
+<li><input disabled="" type="checkbox"> 能给出开启/关闭 gradient checkpointing 的显存对比数据</li>
+<li><input disabled="" type="checkbox"> 产出阶段总结文档 + GitHub repo + 所有实验记录</li>
 </ul>
 <hr>
 <h1>═══════════════════════════════════════════</h1>
@@ -567,6 +834,13 @@
 </tr>
 </thead>
 <tbody><tr>
+<td>0</td>
+<td>Policy Gradient Methods for RL with Function Approximation, Sutton et al. 2000</td>
+<td><a href="https://proceedings.neurips.cc/paper/1999/file/464d828b85b0bed98e80ade0a5c43b0f-Paper.pdf">https://proceedings.neurips.cc/paper/1999/file/464d828b85b0bed98e80ade0a5c43b0f-Paper.pdf</a></td>
+<td>第 7 周</td>
+<td>Policy Gradient 奠基论文，理解 REINFORCE</td>
+</tr>
+<tr>
 <td>1</td>
 <td>Proximal Policy Optimization (PPO), Schulman et al. 2017</td>
 <td><a href="https://arxiv.org/abs/1707.06347">https://arxiv.org/abs/1707.06347</a></td>
@@ -577,7 +851,7 @@
 <td>2</td>
 <td>Training language models to follow instructions with human feedback (InstructGPT), Ouyang et al. 2022</td>
 <td><a href="https://arxiv.org/abs/2203.02155">https://arxiv.org/abs/2203.02155</a></td>
-<td>第 7 周</td>
+<td>第 8 周</td>
 <td>RLHF 开山之作，定义了 SFT→RM→PPO 三阶段范式</td>
 </tr>
 <tr>
@@ -610,6 +884,27 @@
 </tr>
 <tr>
 <td>7</td>
+<td>KTO: Model Alignment as Prospect Theoretic Optimization, Ethayarajh et al. 2024</td>
+<td><a href="https://arxiv.org/abs/2402.01306">https://arxiv.org/abs/2402.01306</a></td>
+<td>第 11 周</td>
+<td>不需要成对偏好数据，只需 thumbs-up/down</td>
+</tr>
+<tr>
+<td>8</td>
+<td>ORPO: Monolithic Preference Optimization without Reference Model, Hong et al. 2024</td>
+<td><a href="https://arxiv.org/abs/2403.07691">https://arxiv.org/abs/2403.07691</a></td>
+<td>第 11 周</td>
+<td>将 SFT 和对齐合并为一步</td>
+</tr>
+<tr>
+<td>9</td>
+<td>SimPO: Simple Preference Optimization with a Reference-Free Reward, Meng et al. 2024</td>
+<td><a href="https://arxiv.org/abs/2405.14734">https://arxiv.org/abs/2405.14734</a></td>
+<td>第 11 周</td>
+<td>去掉 reference model 的更简洁对齐方法</td>
+</tr>
+<tr>
+<td>10</td>
 <td>RLVR 并不如想象中那么有效 (RLVR is Not That Effective)</td>
 <td><a href="https://arxiv.org/abs/2504.02532">https://arxiv.org/abs/2504.02532</a></td>
 <td>第 11 周</td>
@@ -627,28 +922,40 @@
 </tr>
 </thead>
 <tbody><tr>
+<td>OpenAI Spinning Up in Deep RL (Part 1-2)</td>
+<td><a href="https://spinningup.openai.com/en/latest/">https://spinningup.openai.com/en/latest/</a></td>
+<td>~4h 阅读</td>
+<td>第 7 周前 2 天，<strong>RL 基础必读</strong></td>
+</tr>
+<tr>
+<td>Lilian Weng &quot;Policy Gradient Algorithms&quot; 博客</td>
+<td><a href="https://lilianweng.github.io/posts/2018-04-08-policy-gradient/">https://lilianweng.github.io/posts/2018-04-08-policy-gradient/</a></td>
+<td>~1.5h 阅读</td>
+<td>第 7 周，配合 Spinning Up</td>
+</tr>
+<tr>
 <td>John Schulman &quot;Reinforcement Learning from Human Feedback: Progress and Challenges&quot; (Berkeley 讲座)</td>
 <td><a href="https://www.youtube.com/watch?v=hhiLw5Q_UFg">https://www.youtube.com/watch?v=hhiLw5Q_UFg</a></td>
 <td>~1h</td>
-<td>第 7 周开始前，建立 RLHF 全局视野</td>
+<td>第 7 周后半段，建立 RLHF 全局视野</td>
 </tr>
 <tr>
 <td>Hugging Face RLHF 课程 (TRL 官方教程)</td>
 <td><a href="https://huggingface.co/learn/rlhf-course/unit0/introduction">https://huggingface.co/learn/rlhf-course/unit0/introduction</a></td>
 <td>自学 ~6h</td>
-<td>第 7-8 周配合实操</td>
+<td>第 8 周配合实操</td>
 </tr>
 <tr>
 <td>Hyung Won Chung (OpenAI) &quot;Instruction Tuning and RLHF&quot;</td>
 <td><a href="https://www.youtube.com/watch?v=SXpJ9EmG3s4">https://www.youtube.com/watch?v=SXpJ9EmG3s4</a></td>
 <td>~1h</td>
-<td>第 7 周，理解工业界视角</td>
+<td>第 8 周，理解工业界视角</td>
 </tr>
 <tr>
 <td>李沐精读 InstructGPT 论文</td>
 <td><a href="https://www.bilibili.com/video/BV1hd4y187CR">https://www.bilibili.com/video/BV1hd4y187CR</a></td>
 <td>~40min</td>
-<td>第 7 周配合论文阅读</td>
+<td>第 8 周配合论文阅读</td>
 </tr>
 </tbody></table>
 <h2>🔧 阶段二核心代码资源</h2>
@@ -717,27 +1024,109 @@
 </tr>
 </tbody></table>
 <hr>
-<h2>第 7 周：RL 基础 + RLHF 全景理解</h2>
+<h2>第 7 周：RL 基础——从 Policy Gradient 到 PPO</h2>
 <h3>本周目标</h3>
-<p>补齐 RL 基础知识，建立 RLHF 三阶段范式的完整认知。本周以<strong>读论文 + 看课程</strong>为主，先建立理论框架，下周再动手。</p>
+<p>系统补齐 RL 基础知识。⚠️ <strong>不要急着看 RLHF</strong>——先花一整周把 RL 的地基打扎实。没有 RL 直觉，后面学 PPO/GRPO/DPO 全是在背公式。</p>
 <h3>每日任务</h3>
-<p><strong>周一（2h）：观看 John Schulman Berkeley 讲座</strong></p>
+<p><strong>周一（3h）：RL 核心概念 + Spinning Up Part 1</strong></p>
 <ul>
-<li>视频：<a href="https://www.youtube.com/watch?v=hhiLw5Q_UFg">https://www.youtube.com/watch?v=hhiLw5Q_UFg</a></li>
-<li>这是 PPO 作者亲自讲解 RLHF，非常适合 RL 知识刚起步的人</li>
-<li>重点记笔记：RLHF 的 pipeline（SFT → RM → PPO）和每一步的动机</li>
-</ul>
-<p><strong>周二（2h）：PPO 算法核心概念</strong></p>
-<ul>
-<li>精读 PPO 论文 Section 1-3：<a href="https://arxiv.org/abs/1707.06347">https://arxiv.org/abs/1707.06347</a></li>
-<li>不需要理解所有数学细节，重点理解：<ul>
-<li>为什么用 clipped objective（避免策略更新过大）</li>
-<li>Policy gradient 的直觉：增大高 advantage 动作的概率</li>
+<li>阅读 OpenAI Spinning Up Part 1 &quot;Key Concepts in RL&quot;：<a href="https://spinningup.openai.com/en/latest/spinningup/rl_intro.html">https://spinningup.openai.com/en/latest/spinningup/rl_intro.html</a></li>
+<li>理解核心概念（用 LLM 场景类比）：<ul>
+<li><strong>State</strong>（状态）→ prompt + 已生成的 tokens</li>
+<li><strong>Action</strong>（动作）→ 下一个 token</li>
+<li><strong>Policy</strong>（策略）→ LLM 本身（给定上文，输出 token 概率分布）</li>
+<li><strong>Reward</strong>（奖励）→ RM 打分 / 答案正确性</li>
+<li><strong>Trajectory</strong>（轨迹）→ 一次完整的生成过程</li>
 </ul>
 </li>
-<li>推荐配合 Lilian Weng 博客：<a href="https://lilianweng.github.io/posts/2018-04-08-policy-gradient/">https://lilianweng.github.io/posts/2018-04-08-policy-gradient/</a></li>
+<li>理解 <strong>on-policy vs off-policy</strong> 的区别（直接影响 PPO vs DPO 的理解）</li>
+<li>产出：一张 RL 概念 → LLM 场景的映射表</li>
 </ul>
-<p><strong>周三（2h）：精读 InstructGPT 论文</strong></p>
+<p><strong>周二（3h）：Policy Gradient 和 REINFORCE</strong></p>
+<ul>
+<li>阅读 Spinning Up Part 3 &quot;Intro to Policy Optimization&quot;：<a href="https://spinningup.openai.com/en/latest/spinningup/rl_intro3.html">https://spinningup.openai.com/en/latest/spinningup/rl_intro3.html</a></li>
+<li>配合 Lilian Weng 博客：<a href="https://lilianweng.github.io/posts/2018-04-08-policy-gradient/">https://lilianweng.github.io/posts/2018-04-08-policy-gradient/</a></li>
+<li>核心推导（需要手写一遍）：<ul>
+<li>Policy Gradient 定理：∇J(θ) = E[∑ ∇log π(a|s) · R]</li>
+<li>REINFORCE 算法：用蒙特卡洛采样估计梯度</li>
+<li>直觉：增大高回报动作的概率，减小低回报动作的概率</li>
+</ul>
+</li>
+<li>理解 <strong>Baseline 和 Advantage</strong>：<ul>
+<li>Advantage = Q(s,a) - V(s)，即&quot;这个动作比平均水平好多少&quot;</li>
+<li>为什么减去 baseline 能降低方差？</li>
+</ul>
+</li>
+<li>产出：手写 REINFORCE 的梯度推导过程</li>
+</ul>
+<p><strong>周三（3h）：GAE 和 Value Function</strong></p>
+<ul>
+<li>阅读 Spinning Up 的 VPG (Vanilla Policy Gradient) 文档：<a href="https://spinningup.openai.com/en/latest/algorithms/vpg.html">https://spinningup.openai.com/en/latest/algorithms/vpg.html</a></li>
+<li>理解 <strong>Value Function</strong>（价值函数）：<ul>
+<li>V(s)：从状态 s 出发，遵循策略 π 的期望回报</li>
+<li>Critic 就是用来估计 V(s) 的网络</li>
+</ul>
+</li>
+<li>理解 <strong>GAE（Generalized Advantage Estimation）</strong>：<ul>
+<li>TD(0) 到 TD(λ) 的过渡：在偏差和方差之间权衡</li>
+<li>GAE 公式：A_t^GAE = ∑ (γλ)^l · δ_{t+l}，其中 δ_t = r_t + γV(s_{t+1}) - V(s_t)</li>
+<li>直觉：λ=0 → 高偏差低方差（只看一步）；λ=1 → 低偏差高方差（看到结束）</li>
+</ul>
+</li>
+<li>这是理解 PPO 的<strong>关键前置知识</strong></li>
+<li>产出：GAE 公式推导 + λ 取值对偏差/方差的影响图</li>
+</ul>
+<p><strong>周四（3h）：PPO 算法精读</strong></p>
+<ul>
+<li>精读 PPO 论文：<a href="https://arxiv.org/abs/1707.06347">https://arxiv.org/abs/1707.06347</a></li>
+<li>⚠️ 时间充裕，仔细读——这是后续所有方法的对比锚点</li>
+<li>核心理解：<ol>
+<li><strong>Clipped objective</strong>：r_t(θ) = π_new/π_old，clip 到 [1-ε, 1+ε] 范围内<ul>
+<li>为什么？→ 防止策略一步更新太大导致崩溃</li>
+</ul>
+</li>
+<li><strong>Value function loss</strong>：训练 Critic 来估计 V(s)</li>
+<li><strong>Entropy bonus</strong>：鼓励策略保持探索性</li>
+</ol>
+</li>
+<li>对比 TRPO（Trust Region Policy Optimization）：PPO 是 TRPO 的简化近似</li>
+<li>阅读 Spinning Up 的 PPO 文档：<a href="https://spinningup.openai.com/en/latest/algorithms/ppo.html">https://spinningup.openai.com/en/latest/algorithms/ppo.html</a></li>
+<li>产出：PPO 算法流程图（含 clipped objective 的示意图）</li>
+</ul>
+<p><strong>周五（2h）：观看 John Schulman Berkeley 讲座</strong></p>
+<ul>
+<li>视频：<a href="https://www.youtube.com/watch?v=hhiLw5Q_UFg">https://www.youtube.com/watch?v=hhiLw5Q_UFg</a></li>
+<li>现在你有了 RL 基础，能更深入地理解他讲的内容</li>
+<li>重点记笔记：RLHF 的 pipeline（SFT → RM → PPO）和每一步的动机</li>
+<li>理解 PPO 在 LLM 中的特殊性：token-level 决策 vs game-level 决策</li>
+</ul>
+<p><strong>周末（4-6h）：RLHF 全景 + PPO 在 LLM 中的四模型架构</strong></p>
+<ul>
+<li>画出 RLHF-PPO 的完整数据流图：<ul>
+<li>Actor（策略 LLM）：生成回答</li>
+<li>Critic（价值模型）：估计状态价值，用于计算 GAE advantage</li>
+<li>RM（奖励模型）：对回答打分</li>
+<li>Ref（参考模型）：计算 KL 散度，防止策略偏离太远</li>
+</ul>
+</li>
+<li>理解训练循环：采样 prompt → Actor 生成 → RM 打分 → Critic 估值 → 算 GAE → 更新 Actor &amp; Critic</li>
+<li>思考：为什么需要 4 个模型？GRPO 怎么把 Critic 省掉？DPO 怎么把 RM 和 Critic 都省掉？</li>
+<li>写笔记（bullet points）：RL 基础 + RLHF 四模型架构 + KL 惩罚的必要性</li>
+</ul>
+<h3>✅ 验收</h3>
+<ul>
+<li><input disabled="" type="checkbox"> 能手写 Policy Gradient 定理的推导</li>
+<li><input disabled="" type="checkbox"> 能解释 Advantage、GAE、Baseline 的作用和直觉</li>
+<li><input disabled="" type="checkbox"> 能解释 PPO clipped objective 的公式和动机</li>
+<li><input disabled="" type="checkbox"> 能画出 RLHF-PPO 的四模型数据流图</li>
+<li><input disabled="" type="checkbox"> 理解 on-policy vs off-policy 的区别</li>
+</ul>
+<hr>
+<h2>第 8 周：InstructGPT 精读 + RM 训练 + PPO 实操</h2>
+<h3>本周目标</h3>
+<p>精读 InstructGPT 论文，动手训练 RM 并跑通 PPO，将上周的 RL 理论付诸实践。</p>
+<h3>每日任务</h3>
+<p><strong>周一（3h）：精读 InstructGPT 论文</strong></p>
 <ul>
 <li>论文：<a href="https://arxiv.org/abs/2203.02155">https://arxiv.org/abs/2203.02155</a></li>
 <li>配合李沐精读视频：<a href="https://www.bilibili.com/video/BV1hd4y187CR">https://www.bilibili.com/video/BV1hd4y187CR</a></li>
@@ -747,57 +1136,26 @@
 <li>Table 1：人类评估结果——RLHF 比纯 SFT 好多少</li>
 </ul>
 </li>
-</ul>
-<p><strong>周四（2h）：理解 RM 训练原理</strong></p>
-<ul>
-<li>从 InstructGPT 论文中提取 RM 的训练方法</li>
+<li>理解 RM 训练原理：<ul>
 <li>核心公式：loss = -log σ(r(x, y_w) - r(x, y_l))，即 Bradley-Terry 模型</li>
 <li>直觉：让 RM 学会给&quot;好回答&quot;打高分、给&quot;差回答&quot;打低分</li>
-<li>开始阅读 Hugging Face RLHF 课程：<a href="https://huggingface.co/learn/rlhf-course/unit0/introduction">https://huggingface.co/learn/rlhf-course/unit0/introduction</a></li>
-</ul>
-<p><strong>周五（2h）：PPO 在 LLM 中的四模型架构</strong></p>
-<ul>
-<li>画出 RLHF-PPO 的完整数据流图：<ul>
-<li>Actor（策略 LLM）：生成回答</li>
-<li>Critic（价值模型）：估计状态价值，用于计算 advantage</li>
-<li>RM（奖励模型）：对回答打分</li>
-<li>Ref（参考模型）：计算 KL 散度，防止策略偏离太远</li>
 </ul>
 </li>
-<li>理解训练循环：采样 prompt → Actor 生成 → RM 打分 → 算 advantage → 更新 Actor &amp; Critic</li>
-<li>思考：为什么需要 4 个模型？每个能不能省掉？</li>
+<li>产出：InstructGPT 的三阶段流程图 + RM loss 公式推导</li>
 </ul>
-<p><strong>周末（4-6h）：Hyung Won Chung 讲座 + 写第一篇学习笔记</strong></p>
-<ul>
-<li>观看：<a href="https://www.youtube.com/watch?v=SXpJ9EmG3s4">https://www.youtube.com/watch?v=SXpJ9EmG3s4</a> （工业界视角补充）</li>
-<li>写笔记：&quot;RLHF 全景理解&quot;——涵盖动机、三阶段流程、四模型架构、KL 惩罚的必要性</li>
-<li>可以发布到博客或 GitHub</li>
-</ul>
-<h3>✅ 验收</h3>
-<ul>
-<li><input disabled="" type="checkbox"> 能从零画出 RLHF 的完整流程图（SFT → RM → PPO，含 4 个模型的交互）</li>
-<li><input disabled="" type="checkbox"> 能解释 PPO clipped objective 的直觉</li>
-<li><input disabled="" type="checkbox"> 能解释 Bradley-Terry 损失函数的含义</li>
-<li><input disabled="" type="checkbox"> 读完 InstructGPT 论文，能说出它相比纯 SFT 的核心改进</li>
-</ul>
-<hr>
-<h2>第 8 周：RM 训练 + PPO 实操</h2>
-<h3>本周目标</h3>
-<p>动手训练 RM，跑通 PPO，验证上周学到的理论。</p>
-<h3>每日任务</h3>
-<p><strong>周一（2h）：偏好数据集探索 + TRL 环境搭建</strong></p>
+<p><strong>周二（3h）：偏好数据集探索 + TRL 环境搭建 + RM 训练</strong></p>
 <ul>
 <li><code>pip install trl transformers datasets accelerate</code></li>
 <li>下载 Anthropic HH-RLHF 数据集：<a href="https://huggingface.co/datasets/Anthropic/hh-rlhf">https://huggingface.co/datasets/Anthropic/hh-rlhf</a></li>
 <li>手动看 20 条数据，建立对&quot;什么样的回答会被偏好&quot;的直觉</li>
-<li>理解数据结构：每条数据包含 chosen 和 rejected</li>
-</ul>
-<p><strong>周二（2h）：用 TRL 的 RewardTrainer 训练 RM</strong></p>
-<ul>
+<li>用 TRL 的 RewardTrainer 训练 RM：<ul>
 <li>参考 TRL 官方示例：<a href="https://github.com/huggingface/trl/tree/main/examples">https://github.com/huggingface/trl/tree/main/examples</a></li>
-<li>用 Qwen2.5-1.5B 作为基础，在 HH-RLHF 子集上训练 RM</li>
+<li>用 Qwen2.5-1.5B 作为基础，在 HH-RLHF 子集上训练</li>
 <li>文档：<a href="https://huggingface.co/docs/trl/reward_trainer">https://huggingface.co/docs/trl/reward_trainer</a></li>
+</ul>
+</li>
 <li>用 wandb 记录训练曲线</li>
+<li>⚠️ RM 训练可能需要调参（lr、epoch），预留调试时间</li>
 </ul>
 <p><strong>周三（2h）：RM 质量评估 + Reward Hacking 论文</strong></p>
 <ul>
@@ -806,56 +1164,48 @@
 <li>精读 Gao et al. 2022：<a href="https://arxiv.org/abs/2210.10760">https://arxiv.org/abs/2210.10760</a></li>
 <li>核心结论：过度优化 RM 分数 → 实际质量下降 → 所以需要 KL 惩罚</li>
 </ul>
-<p><strong>周四（2h）：TRL PPOTrainer 情感控制实验</strong></p>
+<p><strong>周四（3h）：TRL PPOTrainer 情感控制实验</strong></p>
 <ul>
 <li>用 TRL 的 PPOTrainer 做最简单的 PPO 实验：让模型生成更&quot;积极&quot;的文本</li>
 <li>用 sentiment 分类模型作为 RM（不需要自己训练 RM）</li>
 <li>文档：<a href="https://huggingface.co/docs/trl/ppo_trainer">https://huggingface.co/docs/trl/ppo_trainer</a></li>
 <li>观察训练中 reward 和 KL 的变化曲线</li>
+<li>⚠️ PPO 环境搭建可能遇到版本兼容问题，预留调试时间</li>
 </ul>
-<p><strong>周五（2h）：完整 RLHF-PPO 训练</strong></p>
+<p><strong>周五（3h）：完整 RLHF-PPO 训练</strong></p>
 <ul>
-<li>使用第 8 周训练的 RM，在 Qwen2.5-1.5B 上跑 PPO</li>
+<li>使用本周训练的 RM，在 Qwen2.5-1.5B 上跑 PPO</li>
 <li>可用 LLaMA-Factory（<code>stage: ppo</code>）或 TRL</li>
 <li>监控训练曲线：reward 是否上升？KL 是否可控？</li>
 <li>记录显存占用：4 模型同时加载需要多少 GPU 内存</li>
+<li>观看 Hyung Won Chung 讲座补充工业界视角：<a href="https://www.youtube.com/watch?v=SXpJ9EmG3s4">https://www.youtube.com/watch?v=SXpJ9EmG3s4</a></li>
 </ul>
-<p><strong>周末（4-6h）：PPO 调参实验 + 实验报告</strong></p>
+<p><strong>周末（4-6h）：PPO 调参实验</strong></p>
 <ul>
 <li>对比实验：KL 系数 β=0.01 vs β=0.1<ul>
 <li>β 太小 → reward hacking；β 太大 → 模型几乎不更新</li>
 </ul>
 </li>
 <li>对比 SFT 模型 vs PPO 模型在同一组问题上的回答质量</li>
-<li>写实验报告：PPO 完整流程、超参数选择、训练曲线分析、工程难点</li>
+<li><strong>用 lm-evaluation-harness 跑 benchmark 对比</strong>（不要只用主观评价）</li>
+<li>整理实验数据到 wandb / 表格中</li>
 </ul>
 <h3>✅ 验收</h3>
 <ul>
+<li><input disabled="" type="checkbox"> 读完 InstructGPT 论文，能解释 SFT → RM → PPO 三阶段和 Bradley-Terry loss</li>
 <li><input disabled="" type="checkbox"> 成功训练了一个 RM 并评估了其质量</li>
 <li><input disabled="" type="checkbox"> 成功跑通 PPO 训练并观察到 reward 上升</li>
 <li><input disabled="" type="checkbox"> 理解 KL 系数对训练稳定性的影响</li>
 <li><input disabled="" type="checkbox"> 能解释 PPO 在 LLM 场景中的四模型架构和显存瓶颈</li>
 </ul>
 <hr>
-<h2>第 9-10 周：GRPO 训练——veRL 框架实战（重点）</h2>
-<h3>第 9 周目标</h3>
+<h2>第 9 周：GRPO 算法原理 + veRL 框架入门</h2>
+<h3>本周目标</h3>
 <p>理解 GRPO 算法原理，用 veRL 框架跑通 GRPO。</p>
-<h3>📑 本周必读论文</h3>
-<ol>
-<li><strong>DeepSeekMath</strong>（GRPO 原始论文）：<a href="https://arxiv.org/abs/2402.03300">https://arxiv.org/abs/2402.03300</a><ul>
-<li>重点读 Section 3.1：GRPO 算法描述</li>
-<li>核心创新：去掉 Critic 模型，用同一 prompt 的多个采样的组内对比来估计 advantage</li>
-</ul>
-</li>
-<li><strong>DeepSeek-R1</strong>：<a href="https://arxiv.org/abs/2501.12948">https://arxiv.org/abs/2501.12948</a><ul>
-<li>重点读 Section 2.1（纯 RL 训练）和 Section 3（训练 pipeline）</li>
-<li>关注：RL 如何激发模型的推理能力（&quot;aha moment&quot;）</li>
-</ul>
-</li>
-</ol>
-<h3>第 9 周每日任务</h3>
+<h3>每日任务</h3>
 <p><strong>周一（2h）：精读 DeepSeekMath 论文中的 GRPO 部分</strong></p>
 <ul>
+<li>论文：<a href="https://arxiv.org/abs/2402.03300">https://arxiv.org/abs/2402.03300</a></li>
 <li>精读 Section 3.1：Group Relative Policy Optimization</li>
 <li>理解核心思想：对同一个 prompt 采样 G 个回答，用组内相对排序替代 Critic</li>
 <li>对比 PPO：GRPO 不需要 Critic 模型 → 省显存 → 能训更大模型</li>
@@ -863,6 +1213,7 @@
 </ul>
 <p><strong>周二（2h）：精读 DeepSeek-R1 论文</strong></p>
 <ul>
+<li>论文：<a href="https://arxiv.org/abs/2501.12948">https://arxiv.org/abs/2501.12948</a></li>
 <li>重点：Section 2（方法）和 Section 3（实验）</li>
 <li>关注训练动态：R1-Zero 的 &quot;aha moment&quot;——模型自发学会了反思和验证</li>
 <li>理解 R1 的完整 pipeline：冷启动 SFT → RL → 拒绝采样 → 再次 SFT → 再次 RL</li>
@@ -893,9 +1244,17 @@
 <li>实验 2：加入长度惩罚 reward，观察模型是否学会生成更简洁的回答</li>
 <li>记录训练曲线和最终 GSM8K 准确率</li>
 </ul>
-<h3>第 10 周目标</h3>
-<p>在更大模型上跑 GRPO + 深入理解训练动态 + 对比 PPO。</p>
-<h3>第 10 周每日任务</h3>
+<h3>✅ 验收</h3>
+<ul>
+<li><input disabled="" type="checkbox"> 精读了 DeepSeekMath 和 DeepSeek-R1 论文，能解释 GRPO 的算法原理</li>
+<li><input disabled="" type="checkbox"> 在 veRL 上成功跑通 GRPO 训练</li>
+<li><input disabled="" type="checkbox"> 理解 veRL 的 Worker 架构和 Single Controller 编排模型</li>
+</ul>
+<hr>
+<h2>第 10 周：GRPO 进阶实验 + 框架对比</h2>
+<h3>本周目标</h3>
+<p>在更大模型上跑 GRPO，深入理解训练动态，完成 GRPO vs PPO 系统对比。</p>
+<h3>每日任务</h3>
 <p><strong>周一（2h）：换用 Qwen2.5-3B 跑 GRPO</strong></p>
 <ul>
 <li>调整 veRL 配置以适配更大模型</li>
@@ -920,50 +1279,76 @@
 </ul>
 <p><strong>周五+周末（6-8h）：GRPO 实验总结</strong></p>
 <ul>
-<li>整理所有 GRPO 实验（不同 group size、不同模型规模、不同 reward 设计）</li>
-<li>写一份&quot;GRPO 实战指南&quot;：从算法原理到环境搭建到超参调优的全流程</li>
-<li>发布到 GitHub 或博客</li>
+<li>整理所有 GRPO 实验数据（不同 group size、不同模型规模、不同 reward 设计）</li>
+<li>整理到 GitHub repo（代码 + 配置 + wandb 链接），写简洁 README 即可</li>
+<li>⚠️ 不要花时间写长篇博客，把时间留给后续实操</li>
 </ul>
-<h3>✅ 验收（两周合计）</h3>
+<h3>✅ 验收</h3>
 <ul>
-<li><input disabled="" type="checkbox"> 精读了 DeepSeekMath 和 DeepSeek-R1 论文，能解释 GRPO 的算法原理</li>
-<li><input disabled="" type="checkbox"> 在 veRL 上成功跑通 GRPO 训练</li>
 <li><input disabled="" type="checkbox"> 完成 GRPO vs PPO 的系统对比实验</li>
-<li><input disabled="" type="checkbox"> 理解 veRL 的 Worker 架构和 Single Controller 编排模型</li>
+<li><input disabled="" type="checkbox"> 在更大模型上成功跑通 GRPO 训练并分析训练动态</li>
 <li><input disabled="" type="checkbox"> 产出一份 GRPO 实战指南</li>
 </ul>
 <hr>
 <h2>第 11 周：DPO 训练 + 离线对齐方法族</h2>
 <h3>本周目标</h3>
-<p>掌握 DPO 的原理和实操，理解离线对齐方法与在线 RL 方法的本质区别。</p>
+<p>掌握 DPO 的原理和实操，<strong>手写 DPO 训练循环</strong>加深底层理解，掌握合成偏好数据的构造方法。</p>
 <h3>每日任务</h3>
-<p><strong>周一（2h）：DPO 论文精读</strong></p>
+<p><strong>周一（3h）：DPO 论文精读</strong></p>
 <ul>
 <li>论文：Rafailov et al. 2023，<a href="https://arxiv.org/abs/2305.18290">https://arxiv.org/abs/2305.18290</a></li>
-<li>核心推导：将 RM + PPO 两步合并为一步，直接从偏好数据优化策略</li>
+<li>核心推导（需要手写一遍）：<ul>
+<li>从 RM + PPO 的目标函数出发，推导出最优策略的解析解</li>
+<li>将最优策略代入 Bradley-Terry 模型，得到 DPO loss</li>
 <li>DPO loss = -log σ(β · (log π(y_w|x)/π_ref(y_w|x) - log π(y_l|x)/π_ref(y_l|x)))</li>
+</ul>
+</li>
 <li>关键 insight：最优策略和最优 RM 之间存在解析解关系，所以可以绕过 RM</li>
+<li>与上周的 RL 知识对接：DPO 是 <strong>off-policy</strong> 方法，不需要在线采样</li>
 </ul>
-<p><strong>周二（2h）：DPO 实战——用 TRL 跑 DPO 训练</strong></p>
+<p><strong>周二（3h）：手写 DPO 训练循环（关键！）</strong></p>
 <ul>
-<li>使用 Anthropic HH-RLHF 数据集</li>
-<li>在 Qwen2.5-1.5B 上用 TRL 的 DPOTrainer 训练</li>
+<li>⚠️ <strong>不用 TRL 或 LLaMA-Factory</strong>，用原生 PyTorch 实现简化版 DPO 训练（~80 行）：<pre><code class="language-python"># 伪代码框架
+for batch in dataloader:
+    # 1. 计算 policy model 在 chosen/rejected 上的 log prob
+    chosen_logps = get_logprobs(model, batch[&quot;chosen&quot;])
+    rejected_logps = get_logprobs(model, batch[&quot;rejected&quot;])
+    # 2. 计算 reference model 的 log prob（with torch.no_grad()）
+    ref_chosen_logps = get_logprobs(ref_model, batch[&quot;chosen&quot;])
+    ref_rejected_logps = get_logprobs(ref_model, batch[&quot;rejected&quot;])
+    # 3. 计算 DPO loss
+    logits = beta * ((chosen_logps - ref_chosen_logps) - (rejected_logps - ref_rejected_logps))
+    loss = -F.logsigmoid(logits).mean()
+    loss.backward(); optimizer.step()
+</code></pre>
+</li>
+<li>关键细节：<code>get_logprobs</code> 怎么写？→ 逐 token 取 log_softmax 后 gather，再 sum</li>
+<li>在 Qwen2.5-0.5B + HH-RLHF 小子集上验证你的实现能训起来</li>
+<li><strong>为什么要做这一步</strong>：面试时被问到 &quot;DPO loss 具体怎么算的&quot;，你需要答到代码级</li>
+<li>产出：一个独立可运行的 <code>dpo_train.py</code> 脚本</li>
+</ul>
+<p><strong>周三（3h）：用 TRL / LLaMA-Factory 跑 DPO + 合成偏好数据</strong></p>
+<ul>
+<li>用 TRL 的 DPOTrainer 在 Qwen2.5-1.5B 上训练，对比你手写版本的结果：<ul>
 <li>参考 TRL 示例脚本：<a href="https://github.com/huggingface/trl/tree/main/examples">https://github.com/huggingface/trl/tree/main/examples</a></li>
-<li>对比 DPO 训练的简洁性（只需要 Actor + Ref，不需要 RM 和 Critic）</li>
+<li>LLaMA-Factory 也支持 <code>stage: dpo</code>，对比两种框架的体验</li>
 </ul>
-<p><strong>周三（2h）：DPO 调参 + 用 LLaMA-Factory 跑 DPO</strong></p>
-<ul>
-<li>LLaMA-Factory 支持 <code>stage: dpo</code></li>
-<li>在 7B 模型上跑 DPO，对比不同 β 值的效果</li>
-<li>β 太大 → 过度保守；β 太小 → 效果不明显</li>
-<li>对比 TRL 和 LLaMA-Factory 两种框架的使用体验</li>
+</li>
+<li><strong>构造合成偏好数据</strong>（工业界核心技能）：<ul>
+<li>用你的 SFT 模型对同一个 prompt 生成 5 个回答（temperature=0.7）</li>
+<li>用更强的模型（如 GPT-4 API 或 Qwen2.5-72B API）做 judge，选出 best 和 worst</li>
+<li>构造 (prompt, chosen, rejected) 三元组，共 500 条</li>
+<li>这就是 <strong>拒绝采样（Rejection Sampling）</strong> 的核心思想，也是 DeepSeek-R1 pipeline 的关键步骤</li>
+</ul>
+</li>
+<li>产出：500 条合成偏好数据 + DPO 训练结果</li>
 </ul>
 <p><strong>周四（2h）：DPO 变体概览 + RLVR 反思</strong></p>
 <ul>
 <li>快速了解 DPO 变体的核心改进思路：<ul>
-<li><strong>KTO</strong>（Kahneman-Tversky Optimization）：不需要成对偏好数据，只需要 thumbs-up/down</li>
-<li><strong>ORPO</strong>（Odds Ratio Preference Optimization）：将 SFT 和对齐合并为一步</li>
-<li><strong>SimPO</strong>（Simple Preference Optimization）：去掉 reference model，更简洁</li>
+<li><strong>KTO</strong>（Kahneman-Tversky Optimization）：不需要成对偏好数据，只需要 thumbs-up/down。论文：<a href="https://arxiv.org/abs/2402.01306">https://arxiv.org/abs/2402.01306</a></li>
+<li><strong>ORPO</strong>（Odds Ratio Preference Optimization）：将 SFT 和对齐合并为一步。论文：<a href="https://arxiv.org/abs/2403.07691">https://arxiv.org/abs/2403.07691</a></li>
+<li><strong>SimPO</strong>（Simple Preference Optimization）：去掉 reference model，更简洁。论文：<a href="https://arxiv.org/abs/2405.14734">https://arxiv.org/abs/2405.14734</a></li>
 </ul>
 </li>
 <li>精读 &quot;RLVR 并不如想象中那么有效&quot;：<a href="https://arxiv.org/abs/2504.02532">https://arxiv.org/abs/2504.02532</a><ul>
@@ -971,12 +1356,12 @@
 </ul>
 </li>
 </ul>
-<p><strong>周五+周末（6-8h）：DPO vs PPO vs GRPO 系统对比 + 总结</strong></p>
+<p><strong>周五+周末（6-8h）：DPO vs PPO vs GRPO 系统对比</strong></p>
 <ul>
-<li>在同一数据集和模型上做三方对比：<ul>
+<li>在同一数据集和模型上做三方对比（<strong>用 benchmark 分数</strong>，不要只用主观评价）：<ul>
 <li>训练复杂度（代码量、调参难度）</li>
 <li>资源需求（显存、训练时间）</li>
-<li>最终效果</li>
+<li>lm-evaluation-harness 评测分数</li>
 </ul>
 </li>
 <li>理解各自适用场景：<ul>
@@ -985,52 +1370,122 @@
 <li>GRPO：有可验证 reward 的场景（数学、代码），效果最强</li>
 </ul>
 </li>
-<li>写一篇对比文章：&quot;RLHF vs DPO vs GRPO：如何选择后训练算法&quot;</li>
+<li>产出：三方对比表格（含 benchmark 数据）</li>
 </ul>
 <h3>✅ 验收</h3>
 <ul>
 <li><input disabled="" type="checkbox"> 能推导 DPO 的核心公式，解释为什么可以绕过 RM</li>
-<li><input disabled="" type="checkbox"> 成功跑通 DPO 训练</li>
-<li><input disabled="" type="checkbox"> 完成 DPO vs PPO vs GRPO 的三方对比</li>
+<li><input disabled="" type="checkbox"> <strong>能用原生 PyTorch 手写 DPO 训练循环并跑通</strong></li>
+<li><input disabled="" type="checkbox"> 掌握合成偏好数据的构造方法（拒绝采样 + LLM-as-Judge）</li>
+<li><input disabled="" type="checkbox"> 完成 DPO vs PPO vs GRPO 的三方对比（有 benchmark 数据）</li>
 <li><input disabled="" type="checkbox"> 能说出 KTO/ORPO/SimPO 各自的一句话核心改进</li>
 </ul>
 <hr>
 <h2>第 12 周：综合实战项目 + 阶段总结</h2>
 <h3>本周目标</h3>
-<p>用一个完整项目串联所有后训练技术，产出面试级作品。</p>
-<h3>综合项目：在数学推理任务上比较全部后训练方法</h3>
-<p><strong>项目内容</strong>：</p>
-<ol>
-<li>基础模型：Qwen2.5-1.5B（或 3B）</li>
-<li>任务：GSM8K 数学推理</li>
-<li>数据：GSM8K 训练集 + 自建偏好数据（用强模型生成 chosen/rejected）</li>
-<li>对比以下方法：<ul>
-<li>Baseline：原始模型 zero-shot</li>
-<li>SFT：在 GSM8K 的 CoT 数据上做 SFT</li>
-<li>SFT + DPO：在 SFT 基础上用 DPO 进一步优化</li>
-<li>SFT + GRPO：在 SFT 基础上用 GRPO（veRL）进一步优化</li>
+<p>用一个<strong>有实际业务价值的任务</strong>串联所有后训练技术，产出有区分度的面试作品。⚠️ 不要用 GSM8K——任何人按教程都能跑通，没有竞争力。</p>
+<h3>项目选择（三选一，选一个你有数据或有兴趣的领域）</h3>
+<table>
+<thead>
+<tr>
+<th>方案</th>
+<th>任务</th>
+<th>数据来源</th>
+<th>评测方式</th>
+<th>为什么好</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>A</td>
+<td><strong>中文客服对话质量优化</strong></td>
+<td>自建 + 合成（用 GPT-4 生成客服对话）</td>
+<td>LLM-as-Judge + 人工评测</td>
+<td>直接对应业务场景</td>
+</tr>
+<tr>
+<td>B</td>
+<td><strong>Text-to-SQL 生成</strong></td>
+<td>Spider（<a href="https://huggingface.co/datasets/xlangai/spider%EF%BC%89%E6%88%96">https://huggingface.co/datasets/xlangai/spider）或</a> WikiSQL</td>
+<td>SQL 执行准确率（可自动评测）</td>
+<td>有明确的正确性指标</td>
+</tr>
+<tr>
+<td>C</td>
+<td><strong>代码生成/修复</strong></td>
+<td>CodeAlpaca（<a href="https://huggingface.co/datasets/sahil2801/CodeAlpaca-20k%EF%BC%89+">https://huggingface.co/datasets/sahil2801/CodeAlpaca-20k）+</a> 自建</td>
+<td>HumanEval pass@1（<a href="https://github.com/openai/human-eval%EF%BC%89">https://github.com/openai/human-eval）</a></td>
+<td>对应代码方向岗位</td>
+</tr>
+</tbody></table>
+<h3>每日任务</h3>
+<p><strong>周一（3h）：项目规划 + 数据工程</strong></p>
+<ul>
+<li>确定基础模型：Qwen2.5-1.5B（或 3B）</li>
+<li><strong>数据工程</strong>（本项目的核心竞争力）：<ol>
+<li>收集/下载原始数据</li>
+<li>清洗和格式化（用第 4 周学到的 pipeline）</li>
+<li>用强模型（GPT-4 API / Qwen2.5-72B API）生成合成数据补充不足</li>
+<li>构造偏好数据：用拒绝采样生成 chosen/rejected pairs（第 11 周方法）</li>
+<li>数据质量审核：随机抽 50 条人工检查</li>
+</ol>
+</li>
+<li>搭建评测脚本（自动化指标 + LLM-as-Judge）</li>
+<li>产出：干净的训练数据集 + 偏好数据集 + 评测脚本</li>
+</ul>
+<p><strong>周二（3h）：Baseline + SFT 训练</strong></p>
+<ul>
+<li>评测原始模型 zero-shot / few-shot 作为 Baseline</li>
+<li>在任务数据上做 SFT（手写脚本或 LLaMA-Factory）</li>
+<li>用 lm-evaluation-harness 跑通用 benchmark（MMLU/GSM8K）确保通用能力没有严重退化</li>
+<li>用任务专属评测脚本评测 SFT 效果</li>
+</ul>
+<p><strong>周三（3h）：DPO 训练</strong></p>
+<ul>
+<li>用第 11 周构造的合成偏好数据（或本周新构造的），在 SFT 基础上做 DPO</li>
+<li>用你手写的 DPO 脚本或 TRL DPOTrainer</li>
+<li>记录训练曲线、评测分数</li>
+</ul>
+<p><strong>周四（3h）：GRPO 训练（如果任务有可验证 reward）</strong></p>
+<ul>
+<li>如果选了 Text-to-SQL 或代码生成（有自动评测指标），用 veRL 跑 GRPO：<ul>
+<li>参考 veRL 示例：<a href="https://github.com/volcengine/verl/tree/main/examples">https://github.com/volcengine/verl/tree/main/examples</a></li>
+<li>reward = SQL 执行正确（0/1）或 test case 通过率</li>
 </ul>
 </li>
-<li>评测：GSM8K test set pass@1 准确率</li>
-<li>分析：各方法的训练曲线、收敛速度、错误类型对比</li>
-</ol>
-<p><strong>推荐参考</strong>：</p>
-<ul>
-<li>veRL 官方 GSM8K 示例作为 GRPO 的起点</li>
-<li>TRL 示例脚本作为 DPO 的起点</li>
-<li>UltraFeedback 数据集作为偏好数据参考</li>
+<li>如果选了客服对话（无自动指标），用 RM + PPO 替代 GRPO</li>
+<li>记录训练曲线、评测分数</li>
 </ul>
-<p><strong>产出</strong>：</p>
+<p><strong>周五（3h）：评测与深度分析</strong></p>
 <ul>
-<li>一份完整的实验报告（含方法描述、训练配置、结果对比图表、分析结论）</li>
-<li>所有训练代码和配置文件（整理到 GitHub repo）</li>
-<li>一篇技术博客</li>
+<li>在 test set 上评测所有模型（Baseline / SFT / DPO / GRPO-or-PPO）</li>
+<li><strong>不要只看分数</strong>——做 Badcase 分析：<ul>
+<li>随机抽 30 条错误 case，分类错误类型（理解错误 / 格式错误 / 知识缺失 / 推理链断裂）</li>
+<li>分析各方法改善了哪类错误、引入了哪类新错误</li>
+<li>这个分析比最终分数更有面试价值</li>
+</ul>
+</li>
+<li>检查通用能力退化：对比各阶段模型在 MMLU 上的分数变化</li>
+</ul>
+<p><strong>周末（4-6h）：产出整理</strong></p>
+<ul>
+<li>一份完整的实验报告，结构：<ol>
+<li>问题定义和业务价值</li>
+<li>数据工程：数据来源、清洗流程、合成数据方法、数据统计</li>
+<li>实验设置：模型、超参数、训练配置（表格形式）</li>
+<li>结果对比：各方法的评测分数 + 训练曲线 + Badcase 分析</li>
+<li>结论：哪种方法最适合这个任务？为什么？如果预算充足会怎么进一步优化？</li>
+</ol>
+</li>
+<li>所有训练代码、配置文件、评测脚本整理到 GitHub repo</li>
+<li>产出：可在面试中展示 15 分钟的完整项目</li>
 </ul>
 <h3>✅ 验收</h3>
 <ul>
-<li><input disabled="" type="checkbox"> 完成 4 种方法的对比实验</li>
-<li><input disabled="" type="checkbox"> GitHub 上有可复现的代码和配置</li>
-<li><input disabled="" type="checkbox"> 产出一份可作为面试展示的实验报告</li>
+<li><input disabled="" type="checkbox"> 完成 3-4 种方法的对比实验，有自动评测指标支撑</li>
+<li><input disabled="" type="checkbox"> 完成 30 条 Badcase 的错误分类分析</li>
+<li><input disabled="" type="checkbox"> 数据工程流程可复现（清洗、合成、偏好数据构造）</li>
+<li><input disabled="" type="checkbox"> GitHub 上有结构清晰、可复现的代码和配置</li>
+<li><input disabled="" type="checkbox"> 产出一份可在面试中展示的实验报告</li>
 </ul>
 <hr>
 <h1>═══════════════════════════════════════════</h1>
@@ -1106,8 +1561,29 @@
 <td>第 15 周</td>
 <td>LLM-as-Judge 评估方法论</td>
 </tr>
+<tr>
+<td>9</td>
+<td>Mixtral of Experts, Jiang et al. 2024</td>
+<td><a href="https://arxiv.org/abs/2401.04088">https://arxiv.org/abs/2401.04088</a></td>
+<td>第 16 周</td>
+<td>MoE 架构代表论文，面试高频</td>
+</tr>
+<tr>
+<td>10</td>
+<td>YaRN: Efficient Context Window Extension, Peng et al. 2023</td>
+<td><a href="https://arxiv.org/abs/2309.00071">https://arxiv.org/abs/2309.00071</a></td>
+<td>第 16 周</td>
+<td>长上下文扩展方法</td>
+</tr>
+<tr>
+<td>11</td>
+<td>Constitutional AI: Harmlessness from AI Feedback (CAI), Bai et al. 2022</td>
+<td><a href="https://arxiv.org/abs/2212.08073">https://arxiv.org/abs/2212.08073</a></td>
+<td>第 16 周</td>
+<td>安全对齐核心方法论</td>
+</tr>
 </tbody></table>
-<h2>🎬 阶段三推荐课程/资料</h2>
+<h2>🎬 阶段三推荐课程/讲座</h2>
 <table>
 <thead>
 <tr>
@@ -1277,8 +1753,19 @@
 <h3>每日任务</h3>
 <p><strong>周一（2h）：量化基础概念</strong></p>
 <ul>
-<li>理解 FP32 → FP16 → INT8 → INT4 的精度-速度-显存 trade-off</li>
-<li>两种主流量化方式：PTQ（Post-Training Quantization）vs QAT（Quantization-Aware Training）</li>
+<li>阅读 Lilian Weng 博客中的量化章节：<a href="https://lilianweng.github.io/posts/2023-01-10-inference-optimization/#quantization">https://lilianweng.github.io/posts/2023-01-10-inference-optimization/#quantization</a></li>
+<li>阅读 HuggingFace 量化指南：<a href="https://huggingface.co/docs/transformers/main/en/quantization/overview">https://huggingface.co/docs/transformers/main/en/quantization/overview</a></li>
+<li>理解数据类型层级：FP32（32bit）→ FP16/BF16（16bit）→ INT8（8bit）→ INT4（4bit）<ul>
+<li>每降一级：显存约减半、速度约提升 1.5-2x、但精度可能下降</li>
+</ul>
+</li>
+<li>两种主流量化方式：<ul>
+<li>PTQ（Post-Training Quantization）：训练后量化，不需要重新训练，直接量化权重</li>
+<li>QAT（Quantization-Aware Training）：训练时模拟量化误差，精度更好但需要训练</li>
+</ul>
+</li>
+<li>理解关键概念：absmax 量化、zero-point 量化、对称 vs 非对称量化</li>
+<li>产出：一份量化基础概念笔记（数据类型对比表 + PTQ vs QAT 对比）</li>
 </ul>
 <p><strong>周二（2h）：GPTQ 量化实操</strong></p>
 <ul>
@@ -1317,85 +1804,181 @@
 <li><input disabled="" type="checkbox"> 能给出不同场景下的量化策略推荐</li>
 </ul>
 <hr>
-<h2>第 15 周：评测体系构建</h2>
+<h2>第 15 周：评测体系进阶 + 数据飞轮</h2>
 <h3>本周目标</h3>
-<p>掌握 LLM 评测方法论，建立一套可复用的多维评测框架。</p>
+<p>在第 5 周搭建的 baseline 评测基础上，掌握 LLM-as-Judge、对抗评测、<strong>数据飞轮</strong>等进阶方法，建立可闭环的评测-改进流程。</p>
 <h3>每日任务</h3>
-<p><strong>周一（2h）：主流 Benchmark 概览</strong></p>
+<p><strong>周一（2h）：评测方法论回顾 + IFEval</strong></p>
 <ul>
-<li>理解各 benchmark 评测什么能力：<ul>
-<li>MMLU（<a href="https://arxiv.org/abs/2009.03300%EF%BC%89%EF%BC%9A%E7%9F%A5%E8%AF%86%E5%92%8C%E6%8E%A8%E7%90%86">https://arxiv.org/abs/2009.03300）：知识和推理</a></li>
-<li>GSM8K：数学推理</li>
-<li>HumanEval（<a href="https://arxiv.org/abs/2107.03374%EF%BC%89%EF%BC%9A%E4%BB%A3%E7%A0%81%E7%94%9F%E6%88%90">https://arxiv.org/abs/2107.03374）：代码生成</a></li>
-<li>IFEval（<a href="https://arxiv.org/abs/2311.07911%EF%BC%89%EF%BC%9A%E6%8C%87%E4%BB%A4%E8%B7%9F%E9%9A%8F">https://arxiv.org/abs/2311.07911）：指令跟随</a></li>
+<li>回顾前几个阶段积累的评测数据：各模型在 MMLU / GSM8K 上的分数变化轨迹</li>
+<li>精读 IFEval 论文：<a href="https://arxiv.org/abs/2311.07911">https://arxiv.org/abs/2311.07911</a><ul>
+<li>评测指令跟随能力（格式约束、长度约束、语言约束等）</li>
 </ul>
 </li>
-<li>安装 lm-evaluation-harness：<a href="https://github.com/EleutherAI/lm-evaluation-harness">https://github.com/EleutherAI/lm-evaluation-harness</a></li>
-<li>了解 OpenCompass：<a href="https://github.com/open-compass/opencompass">https://github.com/open-compass/opencompass</a></li>
+<li>用 lm-evaluation-harness（<a href="https://github.com/EleutherAI/lm-evaluation-harness%EF%BC%89%E8%B7%91">https://github.com/EleutherAI/lm-evaluation-harness）跑</a> IFEval</li>
+<li>了解 OpenCompass：<a href="https://github.com/open-compass/opencompass%EF%BC%88%E5%9B%BD%E4%BA%A7%E8%AF%84%E6%B5%8B%E5%B9%B3%E5%8F%B0%EF%BC%8C%E6%94%AF%E6%8C%81%E4%B8%AD%E6%96%87">https://github.com/open-compass/opencompass（国产评测平台，支持中文</a> benchmark）</li>
 </ul>
-<p><strong>周二（2h）：搭建自动化评测流水线</strong></p>
-<ul>
-<li>用 lm-evaluation-harness 在你的模型上跑 MMLU + GSM8K + HumanEval 的评测</li>
-<li>理解 few-shot evaluation 的工作方式（0-shot vs 5-shot 的差异）</li>
-<li>用 wandb 或表格记录所有评测结果</li>
-</ul>
-<p><strong>周三（2h）：Badcase 分析方法论</strong></p>
-<ul>
-<li>不要只看分数，要看具体的错误案例</li>
-<li>方法：随机抽 50 条错误回答，人工分类错误类型（知识错误、推理错误、格式错误、拒答等）</li>
-<li>根据错误类型分布定位改进方向</li>
-</ul>
-<p><strong>周四（2h）：LLM-as-a-Judge</strong></p>
+<p><strong>周二（2h）：LLM-as-a-Judge 深入</strong></p>
 <ul>
 <li>精读 MT-Bench 论文：<a href="https://arxiv.org/abs/2306.05685">https://arxiv.org/abs/2306.05685</a></li>
 <li>理解 judge 评估方法：pairwise comparison vs single-answer grading</li>
 <li>实操：用 AlpacaEval（<a href="https://github.com/tatsu-lab/alpaca_eval%EF%BC%89%E8%AF%84%E4%BC%B0%E4%BD%A0%E7%9A%84%E6%A8%A1%E5%9E%8B">https://github.com/tatsu-lab/alpaca_eval）评估你的模型</a></li>
-<li>设计 prompt 让 judge 模型给出 1-10 分的评分和理由</li>
+<li>设计 judge prompt：让 judge 模型给出评分 + 理由 + 改进建议</li>
+<li>分析 judge 的一致性：同一条数据跑 3 次，看打分是否稳定</li>
 </ul>
-<p><strong>周五+周末（6-8h）：构建你的评测框架</strong></p>
+<p><strong>周三（3h）：Badcase 深度分析 + 对抗评测</strong></p>
 <ul>
-<li>整合以上方法，建立一个可复用的评测流程：<ol>
-<li>Benchmark 自动评测 → 粗粒度能力概览</li>
-<li>LLM-as-a-Judge → 生成质量评分</li>
-<li>Badcase 分析 → 定位具体问题</li>
+<li>从第 12 周综合项目的模型中抽 50 条错误回答</li>
+<li>错误分类（这是第 12 周初步做过的，这次更系统化）：<ul>
+<li>知识错误（事实性错误）→ 需要更好的训练数据</li>
+<li>推理错误（逻辑链断裂）→ 需要 CoT 训练或 GRPO</li>
+<li>格式错误（不遵循指令格式）→ 需要 IFEval 类数据</li>
+<li>安全问题（有害内容、编造事实）→ 需要安全对齐</li>
+<li>拒答过度（把正常问题也拒答了）→ 安全策略太激进</li>
+</ul>
+</li>
+<li><strong>对抗评测</strong>：设计 10 个 tricky 输入测试模型鲁棒性<ul>
+<li>矛盾指令、角色扮演注入、多语言混合、极端长度</li>
+</ul>
+</li>
+</ul>
+<p><strong>周四（3h）：数据飞轮——从评测到数据改进（核心工程能力）</strong></p>
+<ul>
+<li>⚠️ 这是工业界后训练工程师的日常工作流，比调参重要得多</li>
+<li><strong>数据飞轮流程</strong>：<ol>
+<li>训练模型 → 2. 评测 → 3. 分析 Badcase → 4. 针对性补充训练数据 → 5. 重新训练 → 循环</li>
 </ol>
 </li>
-<li>在你的 SFT / DPO / GRPO 模型上运行这套评测</li>
-<li>写一份评测报告</li>
+<li>动手实践一轮飞轮：<ul>
+<li>根据周三的 Badcase 分析，找到最大的错误类型</li>
+<li>针对该错误类型，用合成数据方法（第 11 周学到的）生成 100 条针对性训练数据</li>
+<li>加入原有数据集，重新做一轮 SFT 或 DPO</li>
+<li>评测新模型，看目标错误类型是否减少</li>
+</ul>
+</li>
+<li>产出：一轮完整的数据飞轮记录（Badcase → 数据补充 → 效果对比）</li>
+</ul>
+<p><strong>周五+周末（6-8h）：构建可复用评测框架 + 报告</strong></p>
+<ul>
+<li>整合所有评测方法，建立一个<strong>可复用的评测 pipeline 脚本</strong>：<ol>
+<li><code>eval_benchmark.sh</code>：自动跑 MMLU / GSM8K / IFEval / HumanEval</li>
+<li><code>eval_judge.py</code>：LLM-as-Judge 评估（可配置 judge prompt）</li>
+<li><code>eval_badcase.py</code>：自动采样错误 case，输出到 CSV 供人工标注</li>
+<li><code>eval_report.py</code>：汇总所有评测结果，生成 Markdown 报告</li>
+</ol>
+</li>
+<li>在阶段二的所有模型上运行这套评测，产出完整的评测报告</li>
+<li>产出：可复用的评测 pipeline + 跨模型对比评测报告</li>
 </ul>
 <h3>✅ 验收</h3>
 <ul>
-<li><input disabled="" type="checkbox"> 能独立运行 lm-evaluation-harness 的多个 benchmark</li>
-<li><input disabled="" type="checkbox"> 掌握 Badcase 分析的方法论</li>
-<li><input disabled="" type="checkbox"> 理解 MT-Bench 论文中的 LLM-as-Judge 方法</li>
-<li><input disabled="" type="checkbox"> 有一套可复用的评测流程</li>
+<li><input disabled="" type="checkbox"> 理解 MT-Bench 论文中的 LLM-as-Judge 方法，并实操过 AlpacaEval</li>
+<li><input disabled="" type="checkbox"> 完成 50 条 Badcase 的系统化分类，产出错误类型分布统计</li>
+<li><input disabled="" type="checkbox"> <strong>完成一轮数据飞轮</strong>（Badcase → 针对性补数据 → 重新训练 → 验证改进）</li>
+<li><input disabled="" type="checkbox"> 有一套可复用的自动化评测 pipeline（脚本化，不是手动跑）</li>
 </ul>
 <hr>
-<h2>第 16 周：阶段三总结</h2>
+<h2>第 16 周：MoE/长上下文/安全对齐 + 阶段总结</h2>
 <h3>本周目标</h3>
-<p>整合全阶段产出，形成从推理到量化到评测的完整工具链。</p>
+<p>补充面试高频但前面未覆盖的三个关键主题（MoE、长上下文、安全对齐），整合阶段三产出。</p>
 <h3>每日任务</h3>
-<p><strong>周一-周二（4h）</strong>：整合推理部署 + 量化 + 评测的所有实验，统一到 GitHub repo
-<strong>周三（2h）</strong>：写一份&quot;模型从训练到部署到评测的全链路文档&quot;
-<strong>周四（2h）</strong>：在量化模型上跑完整评测流程，确保工具链端到端可用
-<strong>周五+周末（6-8h）</strong>：</p>
+<p><strong>周一（3h）：MoE（Mixture of Experts）架构</strong></p>
 <ul>
-<li>更新 GitHub repo，确保所有代码和配置可复现</li>
-<li>复盘：推理优化和评测中最重要的 3 个经验教训</li>
-<li>产出一篇技术博客：&quot;LLM 推理部署 + 量化 + 评测实战&quot;</li>
+<li>精读 Mixtral of Experts 论文 Section 1-3：<a href="https://arxiv.org/abs/2401.04088">https://arxiv.org/abs/2401.04088</a><ul>
+<li>核心思想：每个 token 只激活部分专家（Top-K routing），减少计算量</li>
+<li>关键参数：num_experts、num_experts_per_tok（通常 Top-2）、load balancing loss</li>
+</ul>
+</li>
+<li>了解 DeepSeek-V2 的 MoE 设计：<a href="https://arxiv.org/abs/2405.04434">https://arxiv.org/abs/2405.04434</a><ul>
+<li>DeepSeekMoE 的创新：更细粒度的专家 + 共享专家</li>
+</ul>
+</li>
+<li>理解 MoE 对后训练的影响：<ul>
+<li>SFT/RLHF 时需要注意 load balancing</li>
+<li>量化和部署时的特殊挑战（专家路由 + 显存占用）</li>
+</ul>
+</li>
+<li>面试准备：能画出 MoE 层的结构图，解释 router 如何工作</li>
+<li>产出：MoE 架构笔记（含 router 示意图 + 与 Dense 模型的对比）</li>
+</ul>
+<p><strong>周二（3h）：长上下文扩展方法</strong></p>
+<ul>
+<li>精读 YaRN 论文 Section 2-3：<a href="https://arxiv.org/abs/2309.00071">https://arxiv.org/abs/2309.00071</a><ul>
+<li>核心：通过修改 RoPE 的频率分布，将训练时的上下文长度扩展到推理时的更长长度</li>
+<li>理解 NTK-aware interpolation vs Linear interpolation</li>
+</ul>
+</li>
+<li>了解其他方法（快速浏览即可）：<ul>
+<li>ALiBi（Attention with Linear Biases）：<a href="https://arxiv.org/abs/2108.12409">https://arxiv.org/abs/2108.12409</a></li>
+<li>LongRoPE：<a href="https://arxiv.org/abs/2402.13753">https://arxiv.org/abs/2402.13753</a></li>
+</ul>
+</li>
+<li>理解长上下文对后训练的影响：<ul>
+<li>训练数据需要包含长上下文样本</li>
+<li>KV Cache 显存占用随上下文长度线性增长</li>
+<li>长上下文能力需要专门的评测（如 NIAH, Needle-in-a-Haystack）</li>
+</ul>
+</li>
+<li>产出：长上下文扩展方法对比表（方法 / 原理 / 优缺点）</li>
+</ul>
+<p><strong>周三（2h）：安全对齐基础</strong></p>
+<ul>
+<li>精读 Constitutional AI（CAI）论文 Section 1-3：<a href="https://arxiv.org/abs/2212.08073">https://arxiv.org/abs/2212.08073</a><ul>
+<li>核心：用一组规则（constitution）指导 AI 自我改进，减少对人类标注的依赖</li>
+<li>流程：生成 → 自我批评 → 修改 → 用修改后的数据做 RLHF</li>
+</ul>
+</li>
+<li>了解 Red Teaming 方法论：<ul>
+<li>什么是 Red Teaming？→ 有组织地测试模型的安全漏洞</li>
+<li>常见攻击模式：prompt injection、jailbreak、角色扮演绕过</li>
+<li>参考 Anthropic Red Teaming 论文：<a href="https://arxiv.org/abs/2209.07858">https://arxiv.org/abs/2209.07858</a></li>
+</ul>
+</li>
+<li>对你的模型做一次简单的 Red Team 测试（10 个攻击 prompt）</li>
+<li>产出：安全对齐方法概述 + Red Team 测试结果</li>
+</ul>
+<p><strong>周四（2h）：端到端验证——从训练到部署到评测</strong></p>
+<ul>
+<li>选一个阶段二训练好的模型，走完全链路：<ol>
+<li>用 AutoAWQ（<a href="https://github.com/casper-hansen/AutoAWQ%EF%BC%89%E5%81%9A">https://github.com/casper-hansen/AutoAWQ）做</a> INT4 量化</li>
+<li>用 vLLM 加载量化模型 → 测量推理性能</li>
+<li>用 lm-evaluation-harness 跑 MMLU + GSM8K + IFEval → 对比量化前后分数</li>
+<li>用 AlpacaEval 做 LLM-as-Judge 评测</li>
+</ol>
+</li>
+<li>产出：端到端验证报告</li>
+</ul>
+<p><strong>周五+周末（6-8h）：阶段三整合 + 总结</strong></p>
+<ul>
+<li>整理阶段三所有代码到 GitHub repo：<ul>
+<li>推理部署脚本（vLLM 启动 + 性能测试）</li>
+<li>量化脚本（GPTQ + AWQ）</li>
+<li>评测 pipeline 脚本（第 15 周构建的）</li>
+<li>全链路验证报告</li>
+</ul>
+</li>
+<li>写阶段总结（精简 bullet points）：<ul>
+<li>推理优化：PagedAttention / Continuous Batching / Speculative Decoding</li>
+<li>量化策略：GPTQ vs AWQ 的选择指南（附数据）</li>
+<li>新知识：MoE / 长上下文 / 安全对齐的要点</li>
+</ul>
+</li>
+<li>产出：完整的阶段三 repo + 总结 README</li>
 </ul>
 <h3>✅ 验收</h3>
 <ul>
-<li><input disabled="" type="checkbox"> 有一套训练→部署→评测的完整工具链</li>
-<li><input disabled="" type="checkbox"> GitHub 上有结构清晰的项目仓库</li>
-<li><input disabled="" type="checkbox"> 产出一篇技术博客或总结文档</li>
+<li><input disabled="" type="checkbox"> 能解释 MoE 的 router 机制和 Top-K routing（面试高频）</li>
+<li><input disabled="" type="checkbox"> 能解释 RoPE 长上下文扩展的原理（YaRN / NTK interpolation）</li>
+<li><input disabled="" type="checkbox"> 了解安全对齐方法（CAI / Red Teaming），做过一次 Red Team 测试</li>
+<li><input disabled="" type="checkbox"> 有一套训练→量化→部署→评测的完整工具链，端到端验证通过</li>
+<li><input disabled="" type="checkbox"> 阶段三的 GitHub repo 结构清晰、可复现</li>
 </ul>
 <hr>
 <h1>═══════════════════════════════════════════</h1>
-<h1>阶段四：分布式训练与 veRL 框架深入（第 17-20 周）</h1>
+<h1>阶段四：分布式训练 + 数据工程 + 面试冲刺（第 17-20 周）</h1>
 <h1>═══════════════════════════════════════════</h1>
 <blockquote>
-<p>目标：理解分布式训练范式，能在多 GPU 上用 veRL 跑 GRPO，能读懂 veRL 核心源码</p>
+<p>目标：理解分布式训练范式，掌握工业级数据工程 pipeline，能在多 GPU 上用 veRL 跑 GRPO，产出面试作品集</p>
 </blockquote>
 <h2>📚 阶段四必读论文清单（按阅读顺序排列）</h2>
 <table>
@@ -1431,20 +2014,27 @@
 </tr>
 <tr>
 <td>4</td>
-<td>Megatron-LM: Training Multi-Billion Parameter Language Models Using Model Parallelism, Shoeybi et al. 2019</td>
-<td><a href="https://arxiv.org/abs/1909.08053">https://arxiv.org/abs/1909.08053</a></td>
+<td>Self-Instruct: Aligning LM with Self-Generated Instructions, Wang et al. 2023</td>
+<td><a href="https://arxiv.org/abs/2212.10560">https://arxiv.org/abs/2212.10560</a></td>
 <td>第 19 周</td>
-<td>NVIDIA 大模型训练框架，理解 TP/PP</td>
+<td>合成数据生成的奠基方法</td>
 </tr>
 <tr>
 <td>5</td>
+<td>WizardLM: Empowering Large Language Models to Follow Complex Instructions (Evol-Instruct), Xu et al. 2023</td>
+<td><a href="https://arxiv.org/abs/2304.12244">https://arxiv.org/abs/2304.12244</a></td>
+<td>第 19 周</td>
+<td>指令进化方法，合成复杂训练数据</td>
+</tr>
+<tr>
+<td>6</td>
 <td>SGLang: Efficient Execution of Structured Language Model Programs, Zheng et al. 2024</td>
 <td><a href="https://arxiv.org/abs/2312.07104">https://arxiv.org/abs/2312.07104</a></td>
 <td>第 18 周</td>
 <td>veRL 支持的另一个高性能推理引擎</td>
 </tr>
 </tbody></table>
-<h2>🎬 阶段四推荐课程/资料</h2>
+<h2>🎬 阶段四推荐课程/讲座</h2>
 <table>
 <thead>
 <tr>
@@ -1492,11 +2082,6 @@
 <td>veRL (Volcano Engine RL)</td>
 <td><a href="https://github.com/volcengine/verl">https://github.com/volcengine/verl</a></td>
 <td>第 17-19 周：分布式 GRPO 训练核心框架</td>
-</tr>
-<tr>
-<td>NVIDIA Megatron-LM</td>
-<td><a href="https://github.com/NVIDIA/Megatron-LM">https://github.com/NVIDIA/Megatron-LM</a></td>
-<td>第 19 周：Megatron backend 探索</td>
 </tr>
 <tr>
 <td>DeepSpeed</td>
@@ -1583,17 +2168,11 @@
 <h2>第 18 周：veRL 架构深入</h2>
 <h3>本周目标</h3>
 <p>深入理解 veRL 的架构设计，在多卡环境跑通分布式 GRPO。</p>
-<h3>📑 本周必读论文</h3>
-<ul>
-<li><strong>HybridFlow</strong>（veRL 核心论文）：<a href="https://arxiv.org/abs/2409.19256">https://arxiv.org/abs/2409.19256</a><ul>
-<li>重点读 Section 2-3：3D-HybridEngine 设计和 Hybrid Controller 编排模型</li>
-</ul>
-</li>
-</ul>
 <h3>每日任务</h3>
 <p><strong>周一（2h）：veRL 的 HybridEngine 设计</strong></p>
 <ul>
-<li>精读 HybridFlow 论文 Section 3：<a href="https://arxiv.org/abs/2409.19256">https://arxiv.org/abs/2409.19256</a></li>
+<li>精读 HybridFlow 论文（veRL 核心论文）Section 3：<a href="https://arxiv.org/abs/2409.19256">https://arxiv.org/abs/2409.19256</a></li>
+<li>重点读 Section 2-3：3D-HybridEngine 设计和 Hybrid Controller 编排模型</li>
 <li>核心问题：RL 训练中需要在&quot;训练模式&quot;和&quot;生成模式&quot;之间反复切换，如何高效切换？</li>
 <li>3D-HybridEngine：动态重分片模型参数，消除内存冗余</li>
 </ul>
@@ -1632,88 +2211,272 @@
 <li><input disabled="" type="checkbox"> 能分析训练/生成各阶段的 GPU 利用率</li>
 </ul>
 <hr>
-<h2>第 19 周：Megatron-LM 初探 + 大规模训练</h2>
+<h2>第 19 周：数据工程进阶 + 性能优化</h2>
 <h3>本周目标</h3>
-<p>了解 Megatron-LM 训练框架，掌握性能 profiling 和调优方法。</p>
+<p>系统掌握工业级数据工程 pipeline（合成数据、数据配比、数据飞轮规模化），补充训练性能优化技能。<strong>这是后训练岗位日常工作中最核心的技能。</strong></p>
 <h3>每日任务</h3>
-<p><strong>周一（2h）：Megatron-LM 概览</strong></p>
+<p><strong>周一（3h）：合成数据方法论</strong></p>
 <ul>
-<li>精读 Megatron-LM 论文 Section 3：<a href="https://arxiv.org/abs/1909.08053">https://arxiv.org/abs/1909.08053</a></li>
-<li>仓库：<a href="https://github.com/NVIDIA/Megatron-LM">https://github.com/NVIDIA/Megatron-LM</a></li>
-<li>理解 veRL 支持的两种 backend：FSDP 和 Megatron-LM</li>
-<li>什么时候用 FSDP（灵活、适合研究原型），什么时候用 Megatron（极致性能、生产级）</li>
+<li>系统梳理合成数据生成方法（工业界最常用的数据扩充手段）：<ul>
+<li><strong>Self-Instruct</strong>：<a href="https://arxiv.org/abs/2212.10560">https://arxiv.org/abs/2212.10560</a> —— 用 LLM 从 seed 指令生成新指令</li>
+<li><strong>Evol-Instruct</strong>（WizardLM）：<a href="https://arxiv.org/abs/2304.12244">https://arxiv.org/abs/2304.12244</a> —— 逐步进化指令复杂度</li>
+<li><strong>拒绝采样（Rejection Sampling）</strong>：用 SFT 模型生成多个回答 → 选最好的 → 作为新训练数据</li>
+<li><strong>蒸馏（Distillation）</strong>：用强模型（GPT-4 / Qwen-72B）生成数据训练弱模型</li>
 </ul>
-<p><strong>周二（2h）：veRL + Megatron bridge</strong></p>
-<ul>
-<li>阅读 veRL 的 Megatron 集成文档：<a href="https://verl.readthedocs.io/en/latest/">https://verl.readthedocs.io/en/latest/</a></li>
-<li>理解 veRL 是如何通过 bridge 将 Megatron 的训练能力和 vLLM 的推理能力结合的</li>
+</li>
+<li>动手实践：用 Evol-Instruct 思路，将 100 条简单指令进化为 100 条复杂指令<ul>
+<li>进化维度：增加约束、增加推理步骤、增加上下文</li>
 </ul>
-<p><strong>周三（2h）：训练效率优化</strong></p>
+</li>
+<li>产出：100 条进化后的指令 + 合成数据方法对比表</li>
+</ul>
+<p><strong>周二（3h）：数据配比与课程学习（Curriculum Learning）</strong></p>
 <ul>
+<li>核心问题：训练数据中不同任务类型的比例如何影响模型能力？<ul>
+<li>例如：代码数据太多 → 通用对话能力下降；安全数据太多 → 过度拒答</li>
+</ul>
+</li>
+<li>阅读参考：<ul>
+<li>Qwen2 技术报告中的数据配比策略：<a href="https://arxiv.org/abs/2407.10671%EF%BC%88Section">https://arxiv.org/abs/2407.10671（Section</a> 2.2）</li>
+<li>LIMA 论文对数据配比的启示：<a href="https://arxiv.org/abs/2305.11206">https://arxiv.org/abs/2305.11206</a></li>
+</ul>
+</li>
+<li>做一组数据配比实验（在 Qwen2.5-1.5B 上）：<ul>
+<li>纯指令跟随数据 vs 指令+代码+数学混合数据（3:1:1）vs 全混合均匀分配</li>
+<li>用 MMLU + GSM8K + HumanEval 评测，看不同配比对各维度能力的影响</li>
+</ul>
+</li>
+<li>产出：数据配比实验报告</li>
+</ul>
+<p><strong>周三（3h）：数据飞轮规模化——从手工到自动化</strong></p>
+<ul>
+<li>回顾第 15 周的数据飞轮经验，将其<strong>自动化</strong>：<ul>
+<li>步骤 1：自动评测 → 步骤 2：自动抽取 Badcase → 步骤 3：自动生成针对性数据 → 步骤 4：自动触发训练</li>
+</ul>
+</li>
+<li>写一个 <code>data_flywheel.py</code> 脚本，串联以下流程：<ol>
+<li>调用 lm-evaluation-harness 评测当前模型</li>
+<li>从评测结果中提取错误 case</li>
+<li>用 LLM（API 调用）基于错误 case 生成 50 条相似但正确的训练数据</li>
+<li>合并到训练数据集</li>
+</ol>
+</li>
+<li>理解这就是工业界 &quot;数据标注 → 训练 → 上线 → 收集反馈 → 标注&quot; 的简化版</li>
+<li>产出：可运行的数据飞轮自动化脚本</li>
+</ul>
+<p><strong>周四（2h）：偏好数据质量控制</strong></p>
+<ul>
+<li>偏好数据（chosen/rejected）的质量直接决定 DPO/PPO 的效果</li>
+<li>质量控制方法：<ul>
+<li><strong>标注者一致性</strong>：同一条数据让 3 个标注者（或 3 个 LLM Judge）独立标注，计算一致性（Fleiss&#39; kappa）</li>
+<li><strong>难度分层</strong>：easy pairs（差距明显）vs hard pairs（差距微妙）→ hard pairs 更有训练价值</li>
+<li><strong>去噪</strong>：过滤掉标注不一致（chosen 和 rejected 差距不明显）的数据</li>
+</ul>
+</li>
+<li>在你的合成偏好数据上做一次质量审计</li>
+<li>产出：偏好数据质量审计报告</li>
+</ul>
+<p><strong>周五+周末（6-8h）：训练性能优化 + 阶段整合</strong></p>
+<ul>
+<li><strong>性能优化</strong>：<ul>
 <li>学习 PyTorch Profiler：<a href="https://pytorch.org/tutorials/recipes/recipes/profiler_recipe.html">https://pytorch.org/tutorials/recipes/recipes/profiler_recipe.html</a></li>
 <li>在 veRL 训练中开启 profiling，找到计算、通信、内存的瓶颈</li>
-<li>了解 NVIDIA Nsight Systems 的基本用法</li>
-</ul>
-<p><strong>周四（2h）：混合精度训练</strong></p>
-<ul>
 <li>BF16 vs FP16 的差异（BF16 动态范围更大，不易 overflow）</li>
-<li>在 veRL 中配置混合精度训练</li>
-<li>理解 loss scaling 在 FP16 训练中的作用</li>
+<li>尝试 <code>torch.compile</code> 加速，记录效果</li>
 </ul>
-<p><strong>周五+周末（6-8h）：性能优化实验</strong></p>
-<ul>
-<li>对比：FSDP backend vs Megatron backend 在相同任务上的吞吐量</li>
-<li>尝试开启 torch.compile，观察速度提升</li>
-<li>整理一份 veRL 性能调优清单</li>
+</li>
+<li><strong>整合所有数据工程经验</strong>：<ul>
+<li>整理一份 &quot;后训练数据工程手册&quot;：<ol>
+<li>数据清洗 checklist（第 4 周）</li>
+<li>合成数据方法选择指南（本周）</li>
+<li>数据配比最佳实践（本周）</li>
+<li>偏好数据质量控制流程（本周）</li>
+<li>数据飞轮自动化方案（第 15 + 本周）</li>
+</ol>
+</li>
+</ul>
+</li>
+<li>产出：数据工程手册 + 性能 profiling 数据</li>
 </ul>
 <h3>✅ 验收</h3>
 <ul>
-<li><input disabled="" type="checkbox"> 读完 Megatron-LM 论文，理解 TP/PP 的实现方式</li>
-<li><input disabled="" type="checkbox"> 能使用 profiling 工具定位训练瓶颈</li>
-<li><input disabled="" type="checkbox"> 有一份 veRL 性能调优清单</li>
+<li><input disabled="" type="checkbox"> 能用 Self-Instruct / Evol-Instruct / 拒绝采样 三种方法生成合成数据</li>
+<li><input disabled="" type="checkbox"> 做过数据配比实验，理解不同配比对模型能力的影响</li>
+<li><input disabled="" type="checkbox"> 有一个可运行的数据飞轮自动化脚本</li>
+<li><input disabled="" type="checkbox"> 做过偏好数据质量审计（一致性检查）</li>
+<li><input disabled="" type="checkbox"> 产出一份&quot;后训练数据工程手册&quot;</li>
 </ul>
 <hr>
 <h2>第 20 周：终极总结 + 面试准备</h2>
-<h3>本周任务</h3>
-<p><strong>周一-周三：整理所有项目产出</strong></p>
+<h3>本周目标</h3>
+<p>整理所有学习产出为可展示的作品集，完成面试准备和模拟面试。</p>
+<h3>每日任务</h3>
+<p><strong>周一（3h）：创建项目仓库结构</strong></p>
 <ul>
 <li>创建一个 GitHub 仓库，结构如下：<pre><code>llm-learning-journey/
 ├── phase1-transformer-sft/     # 阶段一的代码和实验报告
+│   ├── nanogpt/                # 手写 GPT 代码
+│   ├── sft-experiments/        # LoRA/QLoRA/全参微调实验
+│   └── README.md
 ├── phase2-post-training/       # 阶段二的 RM/PPO/GRPO/DPO 实验
+│   ├── rm-training/            # Reward Model 训练代码
+│   ├── ppo-experiments/        # PPO 实验
+│   ├── grpo-experiments/       # GRPO 实验（veRL 配置）
+│   ├── dpo-experiments/        # DPO 实验
+│   ├── comparison/             # 三方对比数据和报告
+│   └── README.md
 ├── phase3-inference-eval/      # 阶段三的部署和评测
+│   ├── serving/                # vLLM 部署脚本
+│   ├── quantization/           # GPTQ/AWQ 量化脚本
+│   ├── evaluation/             # 评测框架和结果
+│   └── README.md
 ├── phase4-distributed/         # 阶段四的分布式训练
+│   ├── fsdp-examples/          # FSDP 训练脚本
+│   ├── verl-configs/           # veRL 多卡配置
+│   └── README.md
 ├── blog-posts/                 # 发布过的技术博客
 └── README.md                   # 项目总览
 </code></pre>
 </li>
-<li>确保每个实验有 README、配置文件和结果截图</li>
+<li>将之前各阶段的代码和报告迁移到对应目录</li>
+<li>检查每个子目录都有 <code>requirements.txt</code> 或环境说明</li>
+<li>产出：结构完整的 GitHub 仓库骨架</li>
 </ul>
-<p><strong>周四-周五：面试题准备</strong></p>
+<p><strong>周二（3h）：整理实验代码和报告</strong></p>
 <ul>
-<li>整理高频面试问题并准备答案：<ol>
-<li>手写 Multi-Head Attention（代码题）</li>
-<li>解释 RLHF 三步流程和各模型角色</li>
-<li>PPO vs GRPO vs DPO 的对比和选择</li>
-<li>LoRA 的原理和超参数选择</li>
-<li>KV Cache 的计算和优化</li>
-<li>vLLM 的 PagedAttention 原理</li>
-<li>分布式训练中 FSDP 和 TP 的区别</li>
-<li>如何设计模型评测方案</li>
-<li>训练中 loss 不下降怎么排查</li>
-<li>Reward Hacking 是什么、怎么防止</li>
+<li>逐个检查每个实验目录：<ul>
+<li>有 README.md：说明实验目的、运行步骤、预期结果</li>
+<li>有配置文件：训练 yaml / json 配置，可直接复用</li>
+<li>有结果数据：wandb 链接或截图、评测分数表格</li>
+<li>代码可运行：检查 import 路径、数据路径是否正确</li>
+</ul>
+</li>
+<li>统一代码风格：用 <code>black</code> 格式化 Python 代码，用一致的注释风格</li>
+<li>重点整理面试最可能被问到的 3 个项目：<ol>
+<li>LoRA vs QLoRA 7B 微调对比（阶段一）</li>
+<li>PPO vs GRPO vs DPO 三方对比（阶段二）</li>
+<li>量化部署 + 评测全链路（阶段三）</li>
+</ol>
+</li>
+<li>产出：每个实验都可独立复现</li>
+</ul>
+<p><strong>周三（2h）：撰写项目总览 README</strong></p>
+<ul>
+<li>项目 README 结构：<ol>
+<li>一句话介绍：&quot;LLM 后训练全流程学习——从 Transformer 源码到分布式 GRPO 训练&quot;</li>
+<li>技术栈概览（表格）：PyTorch / Transformers / LLaMA-Factory / TRL / veRL / vLLM</li>
+<li>各阶段亮点（每个阶段 2-3 句话 + 关键数据指标）</li>
+<li>核心实验结果摘要（附图表）：<ul>
+<li>LoRA vs QLoRA 显存/效果对比图</li>
+<li>PPO vs GRPO vs DPO 训练曲线对比</li>
+<li>量化前后性能/精度对比表</li>
+</ul>
+</li>
+<li>快速开始指南（如何复现关键实验）</li>
+</ol>
+</li>
+<li>产出：一个专业的项目 README，点进来就能看出做了什么、有什么亮点</li>
+</ul>
+<p><strong>周四（3h）：面试题准备（上）——算法原理 + 代码题</strong></p>
+<ul>
+<li><p>准备以下 5 个高频面试题的答案（每题写出 2 分钟口述版 + 技术细节版）：</p>
+<p><strong>1. 手写 Multi-Head Attention（代码题，15min）</strong></p>
+<ul>
+<li>练习从空文件写出完整的 MHA（含 causal mask）</li>
+<li>参考第 1 周手写代码，确保能默写</li>
+<li>关键考点：Q/K/V 投影、缩放点积、mask、多头拼接</li>
+</ul>
+<p><strong>2. 解释 RLHF 三步流程和各模型角色</strong></p>
+<ul>
+<li>画出完整流程图：SFT → RM → PPO</li>
+<li>四模型架构：Actor / Critic / RM / Ref 各自的职责</li>
+<li>为什么需要 KL 惩罚？→ 防止 reward hacking（参考 Gao et al. 2022：<a href="https://arxiv.org/abs/2210.10760%EF%BC%89">https://arxiv.org/abs/2210.10760）</a></li>
+</ul>
+<p><strong>3. PPO vs GRPO vs DPO 的对比和选择</strong></p>
+<ul>
+<li>用第 11 周的对比实验数据回答</li>
+<li>关键区分点：是否需要 RM、是否需要在线采样、适用场景</li>
+<li>GRPO 去掉 Critic 用组内归一化（参考 DeepSeekMath：<a href="https://arxiv.org/abs/2402.03300%EF%BC%89">https://arxiv.org/abs/2402.03300）</a></li>
+</ul>
+<p><strong>4. LoRA 的原理和超参数选择</strong></p>
+<ul>
+<li>核心：冻结 W，加低秩矩阵 ΔW = A·B</li>
+<li>rank 选择：8-64，越大拟合能力越强但参数越多</li>
+<li>lora_alpha：通常设为 rank 的 2 倍</li>
+<li>lora_target：all vs q_proj,v_proj 的效果差异（用你的实验数据）</li>
+</ul>
+<p><strong>5. KV Cache 的计算和优化</strong></p>
+<ul>
+<li>公式：<code>2 × num_layers × num_kv_heads × head_dim × seq_len × dtype_bytes</code></li>
+<li>以 Qwen2.5-7B 为例计算（第 2 周已做过）</li>
+<li>优化方向：GQA 减少 KV heads、PagedAttention 减少碎片</li>
+</ul>
+</li>
+<li><p>产出：5 个面试题的标准答案文档</p>
+</li>
+</ul>
+<p><strong>周五（3h）：面试题准备（下）——工程实践 + 系统设计</strong></p>
+<ul>
+<li><p>准备以下 5 个高频面试题：</p>
+<p><strong>6. vLLM 的 PagedAttention 原理</strong></p>
+<ul>
+<li>类比操作系统虚拟内存：逻辑块 → 物理块映射</li>
+<li>解决的问题：KV Cache 内存碎片 → 提高吞吐量</li>
+<li>参考论文：<a href="https://arxiv.org/abs/2309.06180">https://arxiv.org/abs/2309.06180</a></li>
+</ul>
+<p><strong>7. 分布式训练中 FSDP 和 TP 的区别</strong></p>
+<ul>
+<li>FSDP：参数分片到多卡，需要时 all-gather 恢复（参考：<a href="https://arxiv.org/abs/2304.11277%EF%BC%89">https://arxiv.org/abs/2304.11277）</a></li>
+<li>TP：将单个层内的计算切分到多卡（参考 Megatron-LM：<a href="https://arxiv.org/abs/1909.08053%EF%BC%89">https://arxiv.org/abs/1909.08053）</a></li>
+<li>适用场景：FSDP 适合研究原型、TP 适合极致性能</li>
+</ul>
+<p><strong>8. 如何设计模型评测方案</strong></p>
+<ul>
+<li>三层评测体系（第 15 周构建的）：Benchmark → LLM-as-Judge → Badcase 分析</li>
+<li>各层的作用：粗筛 → 细评 → 定位改进方向</li>
+<li>常用 Benchmark：MMLU / GSM8K / HumanEval / IFEval（每个评测什么能力）</li>
+</ul>
+<p><strong>9. 训练中 loss 不下降怎么排查</strong></p>
+<ul>
+<li>排查清单（按优先级）：<ol>
+<li>数据格式是否正确（label 是否被正确设置）</li>
+<li>learning rate 是否合理（太大 → loss 震荡；太小 → 不下降）</li>
+<li>模型是否被正确加载（权重是否被冻结）</li>
+<li>梯度是否正常（检查 grad_norm，是否为 0 或 NaN）</li>
+<li>数据是否有问题（随机看 10 条 tokenize 后的数据）</li>
 </ol>
 </li>
 </ul>
-<p><strong>周末：模拟面试</strong></p>
+<p><strong>10. Reward Hacking 是什么、怎么防止</strong></p>
 <ul>
-<li>找朋友或同行做一次模拟技术面试</li>
-<li>时间分配：算法题（20min）+ 项目深挖（30min）+ 基础知识（10min）</li>
+<li>定义：模型学会 &quot;骗&quot; RM 的高分策略，但实际回答质量下降</li>
+<li>原因：RM 不完美，存在可被 exploit 的漏洞</li>
+<li>防止方法：KL 惩罚（限制策略偏离 reference 的幅度）、定期更新 RM、多 RM 投票</li>
+<li>参考论文：<a href="https://arxiv.org/abs/2210.10760">https://arxiv.org/abs/2210.10760</a></li>
+</ul>
+</li>
+<li><p>产出：10 个面试题的完整答案文档，每个题有 2min 口述版和详细版</p>
+</li>
+</ul>
+<p><strong>周末（4-6h）：模拟面试 + 查漏补缺</strong></p>
+<ul>
+<li>模拟面试流程（60 分钟）：<ol>
+<li><strong>算法手撕（20min）</strong>：手写 Multi-Head Attention 或 LoRA forward</li>
+<li><strong>项目深挖（30min）</strong>：挑一个项目（如 GRPO 实验），从动机讲到实现到结果</li>
+<li><strong>基础知识快问快答（10min）</strong>：Transformer 复杂度、BF16 vs FP16、Batch Normalization vs Layer Normalization 等</li>
+</ol>
+</li>
+<li>找朋友或同行做面试官，或对着镜头录制自己的回答</li>
+<li>记录每个不流畅的点，针对性补充</li>
+<li>阅读参考：面经整理帖（知乎搜索 &quot;大模型算法工程师面经&quot;）</li>
+<li>产出：模拟面试录音/笔记 + 查漏补缺清单</li>
 </ul>
 <h3>✅ 最终验收</h3>
 <ul>
-<li><input disabled="" type="checkbox"> GitHub 上有结构清晰、可复现的完整项目仓库</li>
-<li><input disabled="" type="checkbox"> 能在 60 秒内流畅讲清楚任何一个阶段的核心实验</li>
-<li><input disabled="" type="checkbox"> 完成至少一次模拟面试</li>
+<li><input disabled="" type="checkbox"> GitHub 上有结构清晰、可复现的完整项目仓库，README 专业</li>
+<li><input disabled="" type="checkbox"> 能在 60 秒内流畅讲清楚任何一个阶段的核心实验（录音验证）</li>
+<li><input disabled="" type="checkbox"> 完成至少一次模拟面试，有改进记录</li>
+<li><input disabled="" type="checkbox"> 10 个高频面试题都有标准答案，能流畅口述</li>
 </ul>
 <hr>
 <h1>附录：全阶段资源汇总</h1>
@@ -1722,29 +2485,34 @@
 <thead>
 <tr>
 <th>资源</th>
+<th>链接</th>
 <th>用途</th>
 <th>阶段</th>
 </tr>
 </thead>
 <tbody><tr>
 <td>Karpathy: Let&#39;s build GPT</td>
+<td><a href="https://www.youtube.com/watch?v=kCc8FmEb1nY">https://www.youtube.com/watch?v=kCc8FmEb1nY</a></td>
 <td>手写 Transformer</td>
 <td>1</td>
 </tr>
 <tr>
 <td>Karpathy: Build nanoGPT</td>
+<td><a href="https://github.com/karpathy/build-nanogpt">https://github.com/karpathy/build-nanogpt</a></td>
 <td>复现 GPT-2</td>
 <td>1</td>
 </tr>
 <tr>
 <td>Karpathy: Tokenizer</td>
+<td><a href="https://www.youtube.com/watch?v=zduSFxRajkE">https://www.youtube.com/watch?v=zduSFxRajkE</a></td>
 <td>BPE 分词原理</td>
 <td>1</td>
 </tr>
 <tr>
-<td>veRL FORCE 大会分享（B站）</td>
-<td>veRL 架构概览</td>
-<td>4</td>
+<td>OpenAI Spinning Up in Deep RL</td>
+<td><a href="https://spinningup.openai.com/en/latest/">https://spinningup.openai.com/en/latest/</a></td>
+<td>RL 基础（Policy Gradient/PPO）</td>
+<td>2</td>
 </tr>
 </tbody></table>
 <h2>核心论文</h2>
@@ -1752,58 +2520,99 @@
 <thead>
 <tr>
 <th>论文</th>
+<th>链接</th>
 <th>用途</th>
 <th>阶段</th>
 </tr>
 </thead>
 <tbody><tr>
 <td>Attention is All You Need (2017)</td>
+<td><a href="https://arxiv.org/abs/1706.03762">https://arxiv.org/abs/1706.03762</a></td>
 <td>Transformer 原理</td>
 <td>1</td>
 </tr>
 <tr>
 <td>LoRA (2021)</td>
+<td><a href="https://arxiv.org/abs/2106.09685">https://arxiv.org/abs/2106.09685</a></td>
 <td>微调方法</td>
 <td>1</td>
 </tr>
 <tr>
 <td>LIMA (2023)</td>
+<td><a href="https://arxiv.org/abs/2305.11206">https://arxiv.org/abs/2305.11206</a></td>
 <td>数据质量 &gt; 数量</td>
 <td>1</td>
 </tr>
 <tr>
 <td>Christiano et al. (2017)</td>
+<td><a href="https://arxiv.org/abs/1707.06347">https://arxiv.org/abs/1707.06347</a></td>
 <td>RLHF 奠基</td>
 <td>2</td>
 </tr>
 <tr>
 <td>InstructGPT / Ouyang et al. (2022)</td>
+<td><a href="https://arxiv.org/abs/2203.02155">https://arxiv.org/abs/2203.02155</a></td>
 <td>RLHF 工业化</td>
 <td>2</td>
 </tr>
 <tr>
 <td>DeepSeekMath / GRPO (2024)</td>
+<td><a href="https://arxiv.org/abs/2402.03300">https://arxiv.org/abs/2402.03300</a></td>
 <td>GRPO 算法</td>
 <td>2</td>
 </tr>
 <tr>
 <td>DeepSeek-R1 (2025)</td>
+<td><a href="https://arxiv.org/abs/2501.12948">https://arxiv.org/abs/2501.12948</a></td>
 <td>GRPO 大规模应用</td>
 <td>2</td>
 </tr>
 <tr>
 <td>DPO / Rafailov et al. (2023)</td>
+<td><a href="https://arxiv.org/abs/2305.18290">https://arxiv.org/abs/2305.18290</a></td>
 <td>直接偏好优化</td>
 <td>2</td>
 </tr>
 <tr>
 <td>vLLM / Kwon et al. (2023)</td>
+<td><a href="https://arxiv.org/abs/2309.06180">https://arxiv.org/abs/2309.06180</a></td>
 <td>PagedAttention</td>
 <td>3</td>
 </tr>
 <tr>
 <td>HybridFlow / veRL (2025)</td>
+<td><a href="https://arxiv.org/abs/2409.19256">https://arxiv.org/abs/2409.19256</a></td>
 <td>veRL 架构设计</td>
+<td>4</td>
+</tr>
+<tr>
+<td>Mixtral of Experts (2024)</td>
+<td><a href="https://arxiv.org/abs/2401.04088">https://arxiv.org/abs/2401.04088</a></td>
+<td>MoE 架构</td>
+<td>3</td>
+</tr>
+<tr>
+<td>YaRN (2023)</td>
+<td><a href="https://arxiv.org/abs/2309.00071">https://arxiv.org/abs/2309.00071</a></td>
+<td>长上下文扩展</td>
+<td>3</td>
+</tr>
+<tr>
+<td>Constitutional AI (2022)</td>
+<td><a href="https://arxiv.org/abs/2212.08073">https://arxiv.org/abs/2212.08073</a></td>
+<td>安全对齐</td>
+<td>3</td>
+</tr>
+<tr>
+<td>Self-Instruct (2023)</td>
+<td><a href="https://arxiv.org/abs/2212.10560">https://arxiv.org/abs/2212.10560</a></td>
+<td>合成数据</td>
+<td>1,4</td>
+</tr>
+<tr>
+<td>WizardLM / Evol-Instruct (2023)</td>
+<td><a href="https://arxiv.org/abs/2304.12244">https://arxiv.org/abs/2304.12244</a></td>
+<td>指令进化</td>
 <td>4</td>
 </tr>
 </tbody></table>
@@ -1812,42 +2621,50 @@
 <thead>
 <tr>
 <th>仓库</th>
+<th>链接</th>
 <th>用途</th>
 <th>阶段</th>
 </tr>
 </thead>
 <tbody><tr>
 <td>karpathy/nanoGPT</td>
+<td><a href="https://github.com/karpathy/nanoGPT">https://github.com/karpathy/nanoGPT</a></td>
 <td>最小 GPT 实现</td>
 <td>1</td>
 </tr>
 <tr>
 <td>hiyouga/LLaMA-Factory</td>
+<td><a href="https://github.com/hiyouga/LLaMA-Factory">https://github.com/hiyouga/LLaMA-Factory</a></td>
 <td>SFT/DPO/PPO 训练框架</td>
 <td>1-2</td>
 </tr>
 <tr>
 <td>huggingface/trl</td>
+<td><a href="https://github.com/huggingface/trl">https://github.com/huggingface/trl</a></td>
 <td>RLHF/DPO/PPO 实现</td>
 <td>2</td>
 </tr>
 <tr>
 <td>volcengine/verl</td>
+<td><a href="https://github.com/volcengine/verl">https://github.com/volcengine/verl</a></td>
 <td>GRPO 训练框架</td>
 <td>2,4</td>
 </tr>
 <tr>
 <td>vllm-project/vllm</td>
+<td><a href="https://github.com/vllm-project/vllm">https://github.com/vllm-project/vllm</a></td>
 <td>推理部署</td>
 <td>3</td>
 </tr>
 <tr>
 <td>EleutherAI/lm-evaluation-harness</td>
+<td><a href="https://github.com/EleutherAI/lm-evaluation-harness">https://github.com/EleutherAI/lm-evaluation-harness</a></td>
 <td>模型评测</td>
 <td>3</td>
 </tr>
 <tr>
 <td>Jiayi-Pan/TinyZero</td>
+<td><a href="https://github.com/Jiayi-Pan/TinyZero">https://github.com/Jiayi-Pan/TinyZero</a></td>
 <td>GRPO 最小复现</td>
 <td>2</td>
 </tr>
